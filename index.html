@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Stockfish Chess Analyzer with Lichess & Chessboard.js</title>
+  <title>Stockfish Chess Analyzer with Chessboard.js</title>
   <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/stockfish@16/src/stockfish.js"></script>
@@ -36,15 +36,6 @@
 
       <!-- Controls -->
       <div class="space-y-6">
-        <!-- Lichess Puzzle Loader -->
-        <div class="bg-gray-800 p-4 rounded-lg">
-          <label class="block text-lg mb-2">Load Lichess Puzzle</label>
-          <div class="flex gap-2">
-            <input id="lichess-url" type="text" placeholder="https://lichess.org/training/XXXXX" class="flex-1 p-2 bg-gray-900 rounded text-sm">
-            <button id="load-puzzle" class="bg-purple-600 px-4 py-2 rounded hover:bg-purple-700">Load</button>
-          </div>
-        </div>
-
         <!-- FEN Input -->
         <div class="bg-gray-800 p-4 rounded-lg">
           <label class="block text-lg mb-2">Current FEN</label>
@@ -149,7 +140,7 @@
               const move = tempGame.move(uci);
               return move ? move.san : null;
             }).filter(s => s);
-            lastPVs[parseInt(multipv) - 1] = {pv: pvSan, uci: pvUci, eval: (parseFloat(score) / 100).toFixed(2)};
+            lastPVs[parseInt(multipv) - 1] = {pv: pvSan, uci: pvUci, eval: (parseFloat(score) / 100).toFixed(2), text: 'Local analysis'};
           }
           if (score) {
             const eval = (parseFloat(score) / 100).toFixed(2);
@@ -161,19 +152,25 @@
 
     // Cloud Analysis (chess-api.com)
     async function cloudAnalyze(fen, variants = 3, depth = 18) {
-      const data = { fen, variants, depth };
-      const res = await fetch('https://chess-api.com/v1', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
-      const json = await res.json();
-      return json.lines.map((line, i) => ({
-        pv: line.continuation.split(' ').map(san => san), // Assume SAN
-        uci: line.lan.split(' '), // LAN for arrows
-        eval: line.eval,
-        text: line.text || 'No explanation provided'
-      }));
+      try {
+        const data = { fen, variants, depth };
+        const res = await fetch('https://chess-api.com/v1', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        const json = await res.json();
+        return json.lines.map((line, i) => ({
+          pv: line.pv.split(' '), // UCI to SAN? Assume pv is SAN, adjust if needed
+          uci: line.pv.split(' '), // Assume pv is UCI for arrows
+          eval: line.eval,
+          text: line.text || 'No explanation provided'
+        }));
+      } catch (e) {
+        console.error('Cloud API error:', e);
+        $('#status').text('Cloud API failed, using local.');
+        return [];
+      }
     }
 
     // Init Board
@@ -254,25 +251,6 @@
       board.position(game.fen());
     }
 
-    // Load Lichess
-    $('#load-puzzle').click(async function() {
-      const url = $('#lichess-url').val();
-      if (!url.includes('lichess.org/training/')) return alert('Invalid URL');
-      const id = url.match(/training\/(\w+)/)[1];
-      const res = await fetch(`https://lichess.org/api/puzzle/${id}`);
-      const data = await res.json();
-      const fen = data.puzzle.fen;
-      $('#fen-input').val(fen);
-      game.load(fen);
-      originalFen = fen;
-      bestMoveUCI = data.puzzle.solution[0];
-      const move = game.move(bestMoveUCI);
-      $('#best-move-input').val(move ? move.san : '');
-      game.undo();
-      initBoard(fen);
-      drawArrow(bestMoveUCI);
-    });
-
     // Set FEN
     $('#set-fen').click(function() {
       const fen = $('#fen-input').val();
@@ -280,6 +258,7 @@
       originalFen = fen;
       initBoard(fen);
       $('#analysis-section').addClass('hidden');
+      clearArrow();
     });
 
     // Analyze (local quick)
@@ -289,6 +268,7 @@
       lastPVs = [];
       stockfish.postMessage('position fen ' + originalFen);
       stockfish.postMessage('go depth 20');
+      $('#status').text('Analyzing...');
     });
 
     // Deep Analysis (cloud)
@@ -300,29 +280,28 @@
       if (!userMove) return alert('Invalid move');
 
       $('#status').text('Deep cloud analysis...');
-      const originalEval = parseFloat(bestVariations[0]?.eval) || 0;
+      originalEval = parseFloat(bestVariations[0]?.eval) || 0;
 
-      // Analyze after user move
+      // Analyze after user move for exploit lines
       const userFen = tempGame.fen();
       yourVariations = await cloudAnalyze(userFen);
       const userEvalAfter = yourVariations[0]?.eval || 0;
-      const delta = originalEval - userEvalAfter; // Assuming white to move
+      const delta = originalEval - userEvalAfter;
 
       // Classify
       let classType = delta > 3 ? 'Blunder' : delta > 1 ? 'Mistake' : delta > 0.5 ? 'Inaccuracy' : 'Good';
       const colors = {Blunder: 'bg-red-600', Mistake: 'bg-orange-600', Inaccuracy: 'bg-yellow-600', Good: 'bg-green-600'};
       $('#classification').addClass(colors[classType]).html(`<h2 class="text-xl font-bold">${classType}</h2>`);
 
-      // Explanation
-      const oppLines = yourVariations.map(v => `<p>Variation: ${v.pv.join(' ')} (eval ${v.eval})</p>`).join('');
-      $('#explanation').html(`
-        <p>Your move ${userSan} is a ${classType.toLowerCase()} (delta ${delta.toFixed(2)}).</p>
-        <p>Opponent can exploit with these lines:</p>
-        ${oppLines}
-        <p>Tip: Always check CCT (Checks, Captures, Threats).</p>
-      `);
+      // Step-by-step explanation for your move
+      let yourExp = `<p>Your move ${userSan} is a ${classType.toLowerCase()} (delta ${delta.toFixed(2)}).</p><p>Opponent exploits:</p>`;
+      yourVariations.forEach((v, i) => {
+        yourExp += `<p>Variation ${i+1}: ${v.pv.join(' ')} (eval ${v.eval}) - ${v.text}</p>`;
+      });
+      yourExp += '<p>Play through to see material gain (stops if >5 eval or 10 steps).</p>';
+      $('#explanation').html(yourExp);
 
-      // Best variations (cloud re-analyze for consistency)
+      // Best variations
       bestVariations = await cloudAnalyze(originalFen);
 
       // Show and populate
@@ -383,9 +362,10 @@
       const varEval = vars[currentVarIndex].eval;
       const pId = currentVarType + '-var-eval';
       $('#' + pId).text(`Step ${currentStep + 1}/${pv.length} | Eval: ${varEval} | Line: ${pv.join(' ')}`);
-      // Stop if material edge or overkill (e.g., |eval| >5 or step >10)
+      // Stop if material edge or overkill
       if (Math.abs(varEval) > 5 || currentStep > 10) {
         $('#' + currentVarType + '-next').prop('disabled', true);
+        $('#' + pId).append(' (Overkill or clear advantage)');
       } else {
         $('#' + currentVarType + '-next').prop('disabled', false);
       }
@@ -410,7 +390,7 @@
     // Init
     $(document).ready(function() {
       initStockfish();
-      initBoard();
+      initBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
       updateMistakesList();
       updateStatus();
       $('#fen-input').val(game.fen());
