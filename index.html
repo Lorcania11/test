@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Stockfish Chess Analyzer with Chessboard.js</title>
+  <title>MasterChess Analyzer</title>
   <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/stockfish@16/src/stockfish.js"></script>
@@ -12,9 +12,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     #board { width: 500px; margin: 20px auto; position: relative; }
-    .square-light { background-color: #f0d9b5; }
-    .square-dark { background-color: #b58863; }
-    .arrows { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+    .arrows { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
   </style>
 </head>
 <body class="bg-gray-900 text-white min-h-screen p-4">
@@ -36,6 +34,24 @@
 
       <!-- Controls -->
       <div class="space-y-6">
+        <!-- API Token -->
+        <div class="bg-gray-800 p-4 rounded-lg">
+          <label class="block text-lg mb-2">Lichess API Token (Optional)</label>
+          <input id="api-token" type="password" placeholder="lip_QZ40lrFICPlpPs7zENfr" class="w-full p-2 bg-gray-900 rounded text-sm">
+          <button id="save-token" class="mt-2 bg-purple-600 px-4 py-2 rounded hover:bg-purple-700">Save Token</button>
+          <p class="text-xs text-gray-400 mt-1">For puzzle loading & activity (puzzle:read scope)</p>
+        </div>
+
+        <!-- Lichess Puzzle Loader -->
+        <div class="bg-gray-800 p-4 rounded-lg">
+          <label class="block text-lg mb-2">Load Lichess Puzzle</label>
+          <div class="flex gap-2">
+            <input id="lichess-url" type="text" placeholder="https://lichess.org/training/XXXXX" class="flex-1 p-2 bg-gray-900 rounded text-sm">
+            <button id="load-puzzle" class="bg-purple-600 px-4 py-2 rounded hover:bg-purple-700">Load</button>
+          </div>
+          <button id="load-daily" class="w-full mt-2 bg-indigo-600 px-4 py-2 rounded hover:bg-indigo-700">Load Daily Puzzle</button>
+        </div>
+
         <!-- FEN Input -->
         <div class="bg-gray-800 p-4 rounded-lg">
           <label class="block text-lg mb-2">Current FEN</label>
@@ -99,7 +115,6 @@
     let game = new Chess();
     let stockfish = null;
     let orientation = 'white';
-    let mode = 'analyze';
     let bestMoveUCI = '';
     let mistakes = JSON.parse(localStorage.getItem('chessMistakes') || '[]');
     let originalFen = '';
@@ -112,8 +127,124 @@
     let lastPVs = [];
     let currentFen = '';
     let currentAnalysis = '';
+    let apiToken = localStorage.getItem('lichessToken') || '';
 
-    // Init Stockfish (local fallback)
+    // Unicode piece symbols
+    const pieceSymbols = {
+      'wK': '♔', 'wQ': '♕', 'wR': '♖', 'wB': '♗', 'wN': '♘', 'wP': '♙',
+      'bK': '♚', 'bQ': '♛', 'bR': '♜', 'bB': '♝', 'bN': '♞', 'bP': '♟'
+    };
+
+    // Init Board with Unicode
+    function initBoard(fen = 'start') {
+      const config = {
+        draggable: true,
+        position: fen,
+        onDragStart: onDragStart,
+        onDrop: onDrop,
+        onSnapEnd: onSnapEnd,
+        orientation: orientation,
+        showNotation: true,
+        pieceTheme: function(piece) {
+          return pieceSymbols[piece] || '';
+        }
+      };
+      board = Chessboard('board', config);
+      addArrowsOverlay();
+    }
+
+    // Save Token
+    $('#save-token').click(function() {
+      apiToken = $('#api-token').val().trim();
+      localStorage.setItem('lichessToken', apiToken);
+      alert(apiToken ? 'Token saved! Enhanced puzzle loading enabled.' : 'Token cleared.');
+    });
+
+    // Load Lichess Puzzle with Token
+    $('#load-puzzle').click(async function() {
+      const url = $('#lichess-url').val();
+      if (!url.includes('lichess.org/training/')) return alert('Invalid URL');
+      const id = url.match(/training\/(\w+)/)[1];
+      try {
+        const headers = {};
+        if (apiToken) headers['Authorization'] = `Bearer ${apiToken}`;
+        const res = await fetch(`https://lichess.org/api/puzzle/${id}`, { headers });
+        if (!res.ok) throw new Error('Rate limit or invalid token');
+        const data = await res.json();
+        const fen = data.puzzle.fen;
+        $('#fen-input').val(fen);
+        game.load(fen);
+        originalFen = fen;
+        bestMoveUCI = data.puzzle.solution[0];
+        const move = game.move(bestMoveUCI);
+        $('#best-move-input').val(move ? move.san : '');
+        game.undo();
+        initBoard(fen);
+        drawArrow(bestMoveUCI);
+        $('#status').text('Puzzle loaded! Themes: ' + data.puzzle.themes.join(', '));
+      } catch (e) {
+        alert('Load failed: ' + e.message + '. Check token or try without.');
+      }
+    });
+
+    // Load Daily Puzzle with Token
+    $('#load-daily').click(async function() {
+      try {
+        const headers = {};
+        if (apiToken) headers['Authorization'] = `Bearer ${apiToken}`;
+        const res = await fetch('https://lichess.org/api/puzzle/daily', { headers });
+        if (!res.ok) throw new Error('Rate limit or invalid token');
+        const data = await res.json();
+        const fen = data.puzzle.fen;
+        $('#fen-input').val(fen);
+        game.load(fen);
+        originalFen = fen;
+        bestMoveUCI = data.puzzle.solution[0];
+        const move = game.move(bestMoveUCI);
+        $('#best-move-input').val(move ? move.san : '');
+        game.undo();
+        initBoard(fen);
+        drawArrow(bestMoveUCI);
+        $('#status').text('Daily puzzle loaded!');
+      } catch (e) {
+        alert('Daily load failed: ' + e.message);
+      }
+    });
+
+    // Cloud Analysis (fixed parsing)
+    async function cloudAnalyze(fen, variants = 3, depth = 18) {
+      try {
+        const data = { fen, variants, depth };
+        const headers = { 'Content-Type': 'application/json' };
+        if (apiToken) headers['Authorization'] = `Bearer ${apiToken}`;
+        const res = await fetch('https://chess-api.com/v1', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(data)
+        });
+        const json = await res.json();
+        return json.lines.map((line, i) => {
+          const pvUci = line.pv.split(' ');
+          const tempGame = new Chess(fen);
+          const pvSan = pvUci.map(uci => {
+            const move = tempGame.move(uci);
+            return move ? move.san : null;
+          }).filter(s => s);
+          return {
+            pv: pvSan,
+            uci: pvUci,
+            eval: line.eval,
+            text: line.text || 'Strategic move'
+          };
+        });
+      } catch (e) {
+        console.error('Cloud API error:', e);
+        $('#status').text('Cloud failed, using local fallback.');
+        return [];
+      }
+    }
+
+    // Init Stockfish (unchanged)
     function initStockfish() {
       stockfish = new Worker('https://cdn.jsdelivr.net/npm/stockfish@16/src/stockfish.js');
       stockfish.postMessage('uci');
@@ -150,45 +281,6 @@
       };
     }
 
-    // Cloud Analysis (chess-api.com)
-    async function cloudAnalyze(fen, variants = 3, depth = 18) {
-      try {
-        const data = { fen, variants, depth };
-        const res = await fetch('https://chess-api.com/v1', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data)
-        });
-        const json = await res.json();
-        return json.lines.map((line, i) => ({
-          pv: line.pv.split(' '), // UCI to SAN? Assume pv is SAN, adjust if needed
-          uci: line.pv.split(' '), // Assume pv is UCI for arrows
-          eval: line.eval,
-          text: line.text || 'No explanation provided'
-        }));
-      } catch (e) {
-        console.error('Cloud API error:', e);
-        $('#status').text('Cloud API failed, using local.');
-        return [];
-      }
-    }
-
-    // Init Board
-    function initBoard(fen = 'start') {
-      const config = {
-        draggable: true,
-        position: fen,
-        onDragStart: onDragStart,
-        onDrop: onDrop,
-        onSnapEnd: onSnapEnd,
-        orientation: orientation,
-        showNotation: true,
-        pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
-      };
-      board = Chessboard('board', config);
-      addArrowsOverlay();
-    }
-
     // Add SVG for arrows
     function addArrowsOverlay() {
       if ($('.arrows').length === 0) {
@@ -207,32 +299,32 @@
     // Draw Arrow
     function drawArrow(uci) {
       clearArrow();
-      const squareSize = $('.square').first().outerWidth();
-      const fromSq = $('.square-' + uci.slice(0,2));
-      const toSq = $('.square-' + uci.slice(2,4));
-      if (fromSq.length && toSq.length) {
-        const fromPos = fromSq.position();
-        const toPos = toSq.position();
-        const x1 = fromPos.left + squareSize / 2;
-        const y1 = fromPos.top + squareSize / 2;
-        const x2 = toPos.left + squareSize / 2;
-        const y2 = toPos.top + squareSize / 2;
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', x1);
-        line.setAttribute('y1', y1);
-        line.setAttribute('x2', x2);
-        line.setAttribute('y2', y2);
-        line.setAttribute('stroke', 'green');
-        line.setAttribute('stroke-width', '5');
-        line.setAttribute('marker-end', 'url(#arrowhead)');
-        $('.arrows').append(line);
-      }
+      const squareSize = 62.5; // Standard for 500px board
+      const from = uci.slice(0,2);
+      const to = uci.slice(2,4);
+      const fromFile = from.charCodeAt(0) - 97;
+      const fromRank = 8 - parseInt(from[1]);
+      const toFile = to.charCodeAt(0) - 97;
+      const toRank = 8 - parseInt(to[1]);
+      const x1 = fromFile * squareSize + squareSize / 2;
+      const y1 = fromRank * squareSize + squareSize / 2;
+      const x2 = toFile * squareSize + squareSize / 2;
+      const y2 = toRank * squareSize + squareSize / 2;
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', x1);
+      line.setAttribute('y1', y1);
+      line.setAttribute('x2', x2);
+      line.setAttribute('y2', y2);
+      line.setAttribute('stroke', 'green');
+      line.setAttribute('stroke-width', '5');
+      line.setAttribute('marker-end', 'url(#arrowhead)');
+      $('.arrows').append(line);
     }
 
     // Clear Arrow
     function clearArrow() {
       $('.arrows').empty();
-      addArrowsOverlay(); // Re-add defs
+      addArrowsOverlay();
     }
 
     // Drag/Drop
@@ -268,10 +360,10 @@
       lastPVs = [];
       stockfish.postMessage('position fen ' + originalFen);
       stockfish.postMessage('go depth 20');
-      $('#status').text('Analyzing...');
+      $('#status').text('Analyzing locally...');
     });
 
-    // Deep Analysis (cloud)
+    // Deep Analysis (cloud with token fallback)
     $('#deep-analysis-btn').click(async function() {
       const userSan = $('#user-move-input').val().trim();
       if (!userSan) return alert('Enter your move');
@@ -279,10 +371,10 @@
       const userMove = tempGame.move(userSan);
       if (!userMove) return alert('Invalid move');
 
-      $('#status').text('Deep cloud analysis...');
+      $('#status').text('Deep analysis...');
       originalEval = parseFloat(bestVariations[0]?.eval) || 0;
 
-      // Analyze after user move for exploit lines
+      // Analyze after user move
       const userFen = tempGame.fen();
       yourVariations = await cloudAnalyze(userFen);
       const userEvalAfter = yourVariations[0]?.eval || 0;
@@ -291,25 +383,32 @@
       // Classify
       let classType = delta > 3 ? 'Blunder' : delta > 1 ? 'Mistake' : delta > 0.5 ? 'Inaccuracy' : 'Good';
       const colors = {Blunder: 'bg-red-600', Mistake: 'bg-orange-600', Inaccuracy: 'bg-yellow-600', Good: 'bg-green-600'};
-      $('#classification').addClass(colors[classType]).html(`<h2 class="text-xl font-bold">${classType}</h2>`);
+      $('#classification').removeClass().addClass(colors[classType]).html(`<h2 class="text-xl font-bold">${classType}</h2>`);
 
-      // Step-by-step explanation for your move
-      let yourExp = `<p>Your move ${userSan} is a ${classType.toLowerCase()} (delta ${delta.toFixed(2)}).</p><p>Opponent exploits:</p>`;
+      // Explanation
+      let exp = `<p>Your move ${userSan} is a ${classType.toLowerCase()} (delta ${delta.toFixed(2)} pawns).</p><p>How opponent capitalizes:</p>`;
       yourVariations.forEach((v, i) => {
-        yourExp += `<p>Variation ${i+1}: ${v.pv.join(' ')} (eval ${v.eval}) - ${v.text}</p>`;
+        exp += `<details><summary>Var ${i+1}: ${v.pv[0]} (eval ${v.eval})</summary>${v.text}<br>Full line: ${v.pv.join(' ')}</details>`;
       });
-      yourExp += '<p>Play through to see material gain (stops if >5 eval or 10 steps).</p>';
-      $('#explanation').html(yourExp);
+      exp += '<p>Step through to see material loss (stops at clear advantage).</p>';
+      $('#explanation').html(exp);
 
       // Best variations
       bestVariations = await cloudAnalyze(originalFen);
 
-      // Show and populate
+      // Show
       $('#analysis-section').removeClass('hidden');
       populateVariationSelects();
       currentVarType = 'your';
       currentVarIndex = 0;
       updateVariationBoard();
+
+      // Save mistake if bad
+      if (delta > 0.5) {
+        mistakes.push({user: userSan, best: $('#best-move-input').val(), delta, date: new Date().toISOString()});
+        localStorage.setItem('chessMistakes', JSON.stringify(mistakes));
+        updateMistakesList();
+      }
     });
 
     // Populate Selects
@@ -321,14 +420,8 @@
     }
 
     // Variation Select Change
-    $('#your-variation-select').change(function() {
-      currentVarType = 'your';
-      currentVarIndex = parseInt($(this).val());
-      currentStep = 0;
-      updateVariationBoard();
-    });
-    $('#best-variation-select').change(function() {
-      currentVarType = 'best';
+    $('#your-variation-select, #best-variation-select').change(function() {
+      currentVarType = $(this).attr('id').includes('your') ? 'your' : 'best';
       currentVarIndex = parseInt($(this).val());
       currentStep = 0;
       updateVariationBoard();
@@ -362,12 +455,11 @@
       const varEval = vars[currentVarIndex].eval;
       const pId = currentVarType + '-var-eval';
       $('#' + pId).text(`Step ${currentStep + 1}/${pv.length} | Eval: ${varEval} | Line: ${pv.join(' ')}`);
-      // Stop if material edge or overkill
+      // Stop if overkill
       if (Math.abs(varEval) > 5 || currentStep > 10) {
-        $('#' + currentVarType + '-next').prop('disabled', true);
-        $('#' + pId).append(' (Overkill or clear advantage)');
+        $(`#${currentVarType}-next`).prop('disabled', true).text('Advantage Clear');
       } else {
-        $('#' + currentVarType + '-next').prop('disabled', false);
+        $(`#${currentVarType}-next`).prop('disabled', false).text('Next');
       }
     }
 
@@ -375,8 +467,7 @@
     function updateMistakesList() {
       const list = $('#mistakes-list');
       list.empty();
-      mistakes.slice(-5).reverse().forEach(m => list.append(`<div>You played ${m.user} | Best was ${m.best}</div>`));
-      if (mistakes.length) $('#mistakes').removeClass('hidden');
+      mistakes.slice(-5).reverse().forEach(m => list.append(`<div>You played ${m.user} | Best was ${m.best} (delta ${m.delta?.toFixed(2)})</div>`));
     }
 
     // Update Status
@@ -387,8 +478,15 @@
       $('#status').text(status);
     }
 
+    // Flip
+    $('#flip-btn').click(function() {
+      orientation = orientation === 'white' ? 'black' : 'white';
+      board.orientation(orientation);
+    });
+
     // Init
     $(document).ready(function() {
+      $('#api-token').val(apiToken);
       initStockfish();
       initBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
       updateMistakesList();
