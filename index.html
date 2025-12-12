@@ -6,27 +6,70 @@
     <title>Advanced Chess Analyzer Pro</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
-    
     <script src="https://unpkg.com/lucide@latest"></script>
-    
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://unpkg.com/chess.js@1.0.0-beta.6/chess.min.js"></script>
     
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-    
-    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css" integrity="sha384-q94+BZtLrkL1/ohfjR8c6L+A6qzNH9R2hBLwyoAfu3i/WCvQjzL2RQJ3uNHDISdU" crossorigin="anonymous">
-    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js" integrity="sha384-8Vi8VHwn3vjQ9eUHUxex3JSN/NFqUg3QbPyX8kWyb93+8AC/pPWTzj+nHtbC5bxD" crossorigin="anonymous"></script>
+    <!-- Chessboard.js v2 for arrow support -->
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboard-js@2.0.0-beta.6/dist/chessboard-js.min.css">
+    <script src="https://unpkg.com/@chrisoakman/chessboard-js@2.0.0-beta.6/dist/chessboard-js.min.js"></script>
 
     <style>
         .board-container {
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
             border: 8px solid #374151;
             border-radius: 4px;
+            position: relative;
         }
-        /* Loading Spinner */
         #loading {
             position: fixed; inset: 0; background: white; z-index: 50;
             display: flex; justify-content: center; align-items: center;
             font-size: 1.5rem; font-weight: bold; color: #3b82f6;
+        }
+        .arrows {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+        .variation-step {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .variation-step:hover {
+            background: rgba(59, 130, 246, 0.1);
+        }
+        .variation-step.active {
+            background: rgba(59, 130, 246, 0.2);
+            border-left: 4px solid #3b82f6;
+        }
+        .timeline-dot {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        .timeline-dot:hover {
+            transform: scale(1.15);
+        }
+        .timeline-dot.active {
+            transform: scale(1.25);
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
+        }
+        .threat-highlight {
+            position: absolute;
+            width: 12.5%;
+            height: 12.5%;
+            background: rgba(239, 68, 68, 0.3);
+            pointer-events: none;
+            z-index: 5;
         }
     </style>
 </head>
@@ -35,10 +78,10 @@
     <div id="loading">Loading Chess Analyzer...</div>
 
     <nav class="bg-slate-900 text-white p-4 shadow-lg">
-        <div class="max-w-6xl mx-auto flex justify-between items-center">
+        <div class="max-w-7xl mx-auto flex justify-between items-center">
             <div class="flex items-center gap-2">
                 <i data-lucide="book-open" class="w-6 h-6 text-blue-400"></i>
-                <h1 class="text-xl font-bold tracking-tight">MasterChess Analyzer</h1>
+                <h1 class="text-xl font-bold tracking-tight">MasterChess Deep Analyzer Pro</h1>
             </div>
             <div class="flex space-x-2">
                 <button onclick="setMode('analyze')" id="btn-analyze" class="px-4 py-1.5 rounded-full text-sm font-medium transition bg-blue-600">Analyze</button>
@@ -47,12 +90,13 @@
         </div>
     </nav>
 
-    <div class="max-w-6xl mx-auto p-4 md:p-8 grid lg:grid-cols-2 gap-8">
+    <div class="max-w-7xl mx-auto p-4 md:p-8 grid lg:grid-cols-2 gap-8">
         
+        <!-- Left Column: Controls -->
         <div class="space-y-6">
             <div class="bg-white p-4 rounded-lg shadow-sm border-l-4 border-blue-500 flex justify-between items-center">
                 <span id="status" class="font-semibold text-lg">White to move</span>
-                <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Stockfish 16 (Sim)</span>
+                <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Cloud Engine</span>
             </div>
 
             <div class="bg-white p-6 rounded-xl shadow-md space-y-5">
@@ -65,103 +109,274 @@
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm font-bold mb-1">Your Move</label>
-                        <input id="userMove" type="text" class="w-full border-2 border-slate-200 rounded-lg p-3 text-lg font-bold focus:border-blue-500 outline-none" placeholder="e4">
+                        <input id="userMove" type="text" class="w-full border-2 border-slate-200 rounded-lg p-3 text-lg font-bold focus:border-blue-500 outline-none" placeholder="e.g. e4, Nf3">
                     </div>
                     <div>
                         <label class="block text-sm font-bold mb-1 text-green-700">Best Move</label>
-                        <input id="bestMove" type="text" class="w-full border-2 border-green-100 bg-green-50 rounded-lg p-3 text-lg font-bold focus:border-green-500 outline-none" placeholder="e.g. Nf3">
+                        <input id="bestMove" type="text" readonly class="w-full border-2 border-green-100 bg-green-50 rounded-lg p-3 text-lg font-bold" placeholder="Will be shown">
                     </div>
                 </div>
 
-                <button onclick="analyzeMove()" id="analyzeBtn" class="w-full bg-slate-900 text-white py-3 rounded-lg font-bold text-lg hover:bg-slate-800 transition shadow-lg flex justify-center items-center gap-2">
+                <button onclick="analyzeMove()" id="analyzeBtn" class="w-full bg-gradient-to-r from-slate-800 to-slate-900 text-white py-3 rounded-lg font-bold text-lg hover:from-slate-700 hover:to-slate-800 transition shadow-lg flex justify-center items-center gap-2">
                     <i data-lucide="target" class="w-5 h-5"></i> Deep Analysis
                 </button>
             </div>
 
-            <div id="analysisResult" class="hidden bg-white rounded-xl shadow-md overflow-hidden animate-in fade-in slide-in-from-bottom-4">
-                <div id="analysisHeader" class="p-4 flex items-center gap-3">
-                    <i id="analysisIcon" data-lucide="check-circle" class="w-6 h-6"></i>
-                    <h3 id="analysisTitle" class="text-xl font-bold">Excellent</h3>
+            <!-- Analysis Result Card -->
+            <div id="analysisResult" class="hidden bg-white rounded-xl shadow-md overflow-hidden">
+                <div id="analysisHeader" class="p-5">
+                    <div class="flex items-center gap-3 mb-2">
+                        <i id="analysisIcon" data-lucide="check-circle" class="w-7 h-7"></i>
+                        <h3 id="analysisTitle" class="text-2xl font-bold">Excellent</h3>
+                    </div>
+                    <div id="analysisStats" class="text-sm text-gray-600"></div>
                 </div>
-                <div class="p-5 space-y-3">
-                    <p id="analysisText" class="text-gray-700 leading-relaxed">...</p>
+                <div class="px-5 pb-5 space-y-3">
+                    <p id="analysisText" class="text-gray-700 leading-relaxed"></p>
                     <div class="bg-blue-50 p-3 rounded text-sm text-blue-900 flex gap-2">
                         <i data-lucide="lightbulb" class="w-4 h-4 mt-0.5 flex-shrink-0"></i>
-                        <span id="analysisAdvice">...</span>
+                        <span id="analysisAdvice"></span>
                     </div>
                 </div>
             </div>
 
-             <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                 <h4 class="font-bold text-sm text-slate-700 mb-2 flex items-center gap-2"><i data-lucide="download" class="w-4 h-4"></i> Load Game (PGN)</h4>
-                 <textarea id="pgnInput" class="w-full text-xs font-mono border p-2 rounded h-20" placeholder='[Event "World Champ"] 1. e4 e5 ...'></textarea>
-                 <button onclick="loadPGN()" class="mt-2 bg-slate-200 hover:bg-slate-300 px-3 py-1 rounded text-xs font-bold text-slate-700">Load PGN</button>
-             </div>
+            <!-- PGN Loader -->
+            <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <h4 class="font-bold text-sm text-slate-700 mb-2 flex items-center gap-2">
+                    <i data-lucide="download" class="w-4 h-4"></i> Load Game (PGN)
+                </h4>
+                <textarea id="pgnInput" class="w-full text-xs font-mono border p-2 rounded h-20" placeholder='[Event "Game"] 1. e4 e5 2. Nf3...'></textarea>
+                <button onclick="loadPGN()" class="mt-2 bg-slate-200 hover:bg-slate-300 px-3 py-1 rounded text-xs font-bold text-slate-700">Load PGN</button>
+            </div>
         </div>
 
+        <!-- Right Column: Board -->
         <div class="flex flex-col items-center">
             <div class="w-full max-w-[500px]">
-                <div id="myBoard" class="board-container w-full"></div>
+                <div id="board-wrapper" class="board-container w-full" style="position: relative;">
+                    <div id="myBoard" class="w-full"></div>
+                </div>
             </div>
             
             <div class="mt-6 flex gap-8 text-center">
-               <div class="bg-white px-4 py-2 rounded shadow text-sm">
+                <div class="bg-white px-4 py-2 rounded shadow text-sm">
                     <span id="moveCount" class="block font-bold text-2xl text-slate-800">0</span>
                     <span class="text-gray-500 uppercase text-xs font-bold">Moves</span>
-               </div>
-               <div class="bg-white px-4 py-2 rounded shadow text-sm">
+                </div>
+                <div class="bg-white px-4 py-2 rounded shadow text-sm">
                     <span id="checkStatus" class="block font-bold text-2xl text-slate-800">NO</span>
                     <span class="text-gray-500 uppercase text-xs font-bold">Check</span>
-               </div>
+                </div>
+                <div class="bg-white px-4 py-2 rounded shadow text-sm">
+                    <span id="evalScore" class="block font-bold text-2xl text-slate-800">0.0</span>
+                    <span class="text-gray-500 uppercase text-xs font-bold">Eval</span>
+                </div>
             </div>
 
+            <!-- Mistakes Log -->
             <div id="mistakesContainer" class="hidden mt-8 w-full max-w-[500px]">
-                <h4 class="font-bold text-gray-700 mb-2 flex items-center gap-2"><i data-lucide="history" class="w-4 h-4"></i> Session Mistakes</h4>
-                <ul id="mistakesList" class="bg-white rounded-lg shadow divide-y">
-                    </ul>
+                <h4 class="font-bold text-gray-700 mb-2 flex items-center gap-2">
+                    <i data-lucide="history" class="w-4 h-4"></i> Session Mistakes
+                </h4>
+                <ul id="mistakesList" class="bg-white rounded-lg shadow divide-y"></ul>
             </div>
         </div>
     </div>
 
+    <!-- Deep Analysis Section -->
+    <div id="deepAnalysisSection" class="hidden max-w-7xl mx-auto p-4 md:p-8 space-y-6">
+        
+        <!-- Playback Controls -->
+        <div class="bg-white p-6 rounded-xl shadow-md">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold flex items-center gap-2">
+                    <i data-lucide="play-circle" class="w-6 h-6 text-blue-600"></i>
+                    Step-by-Step Variation Playback
+                </h2>
+                <div class="flex gap-2">
+                    <button id="autoPlayBtn" onclick="toggleAutoPlay()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2">
+                        <i data-lucide="play" class="w-4 h-4"></i> Auto Play
+                    </button>
+                </div>
+            </div>
+
+            <!-- Mode Selector -->
+            <div class="flex gap-2 mb-4">
+                <button id="modeYourMove" onclick="switchAnalysisMode('your')" class="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold transition">
+                    Your Move → Opponent's Refutation
+                </button>
+                <button id="modeBestMove" onclick="switchAnalysisMode('best')" class="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition">
+                    Best Move → Optimal Play
+                </button>
+            </div>
+
+            <!-- Variation Selector -->
+            <div class="mb-4">
+                <label class="block text-sm font-bold mb-2">Select Variation Line:</label>
+                <select id="variationSelect" onchange="changeVariation()" class="w-full p-2 border-2 border-gray-300 rounded-lg font-mono text-sm">
+                    <option value="0">Loading variations...</option>
+                </select>
+            </div>
+
+            <!-- Timeline -->
+            <div class="bg-gray-100 p-4 rounded-lg mb-4">
+                <label class="block text-sm font-bold mb-2">Move Timeline:</label>
+                <div id="timeline" class="flex gap-2 overflow-x-auto pb-2"></div>
+            </div>
+
+            <!-- Navigation Controls -->
+            <div class="flex gap-2">
+                <button onclick="goToMove('first')" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold">
+                    ⏮ First
+                </button>
+                <button onclick="goToMove('prev')" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold">
+                    ◀ Prev
+                </button>
+                <button onclick="goToMove('next')" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold">
+                    Next ▶
+                </button>
+                <button onclick="goToMove('last')" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold">
+                    Last ⏭
+                </button>
+            </div>
+        </div>
+
+        <!-- Move Analysis -->
+        <div class="grid md:grid-cols-2 gap-6">
+            <!-- Position Explanation -->
+            <div class="bg-white p-6 rounded-xl shadow-md">
+                <h3 class="text-xl font-bold mb-4 flex items-center gap-2">
+                    <i data-lucide="message-square" class="w-5 h-5 text-blue-600"></i>
+                    Position Analysis
+                </h3>
+                <div id="moveExplanation" class="space-y-3 text-gray-700"></div>
+            </div>
+
+            <!-- Threats & Tactics -->
+            <div class="bg-white p-6 rounded-xl shadow-md">
+                <h3 class="text-xl font-bold mb-4 flex items-center gap-2">
+                    <i data-lucide="alert-triangle" class="w-5 h-5 text-red-600"></i>
+                    Threats & Tactical Points
+                </h3>
+                <div id="tacticalAnalysis" class="space-y-3 text-gray-700"></div>
+            </div>
+        </div>
+
+        <!-- Variation Steps -->
+        <div class="bg-white p-6 rounded-xl shadow-md">
+            <h3 class="text-xl font-bold mb-4">Complete Variation Sequence</h3>
+            <div id="variationSteps" class="space-y-2"></div>
+        </div>
+    </div>
+
     <script>
-        // --- VARIABLES ---
+        // === GLOBAL VARIABLES ===
         var board = null;
         var game = new Chess();
-        var $status = $('#status');
-        var $fen = $('#fenInput');
-        var $pgn = $('#pgnInput');
+        var originalFen = '';
+        var currentMode = 'your'; // 'your' or 'best'
+        var yourVariations = [];
+        var bestVariations = [];
+        var currentVariation = 0;
+        var currentStep = 0;
+        var autoPlayInterval = null;
+        var analysisGame = null;
 
-        // --- INITIALIZATION ---
+        // Material values
+        const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+
+        // === BOARD INITIALIZATION ===
         $(document).ready(function() {
-            lucide.createIcons(); // Load Icons
+            lucide.createIcons();
 
-            // Config for Chessboard.js
-            var config = {
+            const config = {
                 draggable: true,
                 position: 'start',
                 onDragStart: onDragStart,
                 onDrop: onDrop,
                 onSnapEnd: onSnapEnd,
-                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
-            }
+                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
+                showNotation: true
+            };
             
             board = Chessboard('myBoard', config);
+            addArrowsOverlay();
             $(window).resize(board.resize);
             
             updateStatus();
+            originalFen = game.fen();
             
-            // Hide loading screen
             setTimeout(() => {
-                document.getElementById('loading').style.display = 'none';
+                $('#loading').hide();
             }, 500);
         });
 
-        // --- CHESS LOGIC ---
-        function onDragStart(source, piece, position, orientation) {
-            // do not pick up pieces if the game is over
-            if (game.game_over()) return false;
+        function addArrowsOverlay() {
+            if ($('.arrows').length === 0) {
+                $('#board-wrapper').append(`
+                    <svg class="arrows">
+                        <defs>
+                            <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse">
+                                <path d="M0,0 L10,5 L0,10 z" fill="#22c55e" />
+                            </marker>
+                            <marker id="arrow-red" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse">
+                                <path d="M0,0 L10,5 L0,10 z" fill="#ef4444" />
+                            </marker>
+                            <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse">
+                                <path d="M0,0 L10,5 L0,10 z" fill="#3b82f6" />
+                            </marker>
+                            <marker id="arrow-yellow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse">
+                                <path d="M0,0 L10,5 L0,10 z" fill="#eab308" />
+                            </marker>
+                        </defs>
+                    </svg>
+                `);
+            }
+        }
 
-            // only pick up pieces for the side to move
+        function drawArrow(from, to, color = 'green') {
+            const $from = $(`.square-${from}`);
+            const $to = $(`.square-${to}`);
+            
+            if ($from.length && $to.length) {
+                const fromPos = $from.offset();
+                const toPos = $to.offset();
+                const boardPos = $('#board-wrapper').offset();
+                const squareSize = $from.width();
+                
+                const x1 = fromPos.left - boardPos.left + squareSize / 2;
+                const y1 = fromPos.top - boardPos.top + squareSize / 2;
+                const x2 = toPos.left - boardPos.left + squareSize / 2;
+                const y2 = toPos.top - boardPos.top + squareSize / 2;
+
+                const colorMap = {
+                    green: '#22c55e',
+                    red: '#ef4444',
+                    blue: '#3b82f6',
+                    yellow: '#eab308'
+                };
+
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', x1);
+                line.setAttribute('y1', y1);
+                line.setAttribute('x2', x2);
+                line.setAttribute('y2', y2);
+                line.setAttribute('stroke', colorMap[color]);
+                line.setAttribute('stroke-width', '8');
+                line.setAttribute('opacity', '0.7');
+                line.setAttribute('marker-end', `url(#arrow-${color})`);
+                
+                $('.arrows')[0].appendChild(line);
+            }
+        }
+
+        function clearArrows() {
+            $('.arrows line').remove();
+        }
+
+        // === CHESS LOGIC ===
+        function onDragStart(source, piece) {
+            if (game.game_over()) return false;
             if ((game.turn() === 'w' && piece.search(/^b/) !== -1) ||
                 (game.turn() === 'b' && piece.search(/^w/) !== -1)) {
                 return false;
@@ -169,20 +384,18 @@
         }
 
         function onDrop(source, target) {
-            // see if the move is legal
-            var move = game.move({
+            const move = game.move({
                 from: source,
                 to: target,
-                promotion: 'q' // NOTE: always promote to a queen for example simplicity
-            })
+                promotion: 'q'
+            });
 
-            // illegal move
             if (move === null) return 'snapback';
 
-            // Valid Move
             updateStatus();
-            document.getElementById('userMove').value = move.san;
-            document.getElementById('analysisResult').classList.add('hidden'); // clear old analysis
+            $('#userMove').val(move.san);
+            $('#analysisResult').addClass('hidden');
+            $('#deepAnalysisSection').addClass('hidden');
         }
 
         function onSnapEnd() {
@@ -190,68 +403,64 @@
         }
 
         function updateStatus() {
-            var status = '';
-            var moveColor = 'White';
-            if (game.turn() === 'b') {
-                moveColor = 'Black';
-            }
+            let status = '';
+            const moveColor = game.turn() === 'w' ? 'White' : 'Black';
 
             if (game.in_checkmate()) {
-                status = 'Game over, ' + moveColor + ' is in checkmate.';
+                status = `Game over, ${moveColor} is in checkmate.`;
             } else if (game.in_draw()) {
                 status = 'Game over, drawn position';
             } else {
-                status = moveColor + ' to move';
+                status = `${moveColor} to move`;
                 if (game.in_check()) {
-                    status += ', ' + moveColor + ' is in check';
+                    status += `, ${moveColor} is in check`;
                 }
             }
 
-            $status.html(status);
-            $fen.val(game.fen());
+            $('#status').html(status);
+            $('#fenInput').val(game.fen());
+            $('#moveCount').text(game.history().length);
             
-            // Update stats
-            document.getElementById('moveCount').innerText = game.history().length;
-            document.getElementById('checkStatus').innerText = game.in_check() ? 'YES' : 'NO';
-            if(game.in_check()) {
-                document.getElementById('checkStatus').className = "block font-bold text-2xl text-red-600";
-            } else {
-                document.getElementById('checkStatus').className = "block font-bold text-2xl text-slate-800";
-            }
+            const isCheck = game.in_check();
+            $('#checkStatus').text(isCheck ? 'YES' : 'NO')
+                .removeClass('text-slate-800 text-red-600')
+                .addClass(isCheck ? 'text-red-600' : 'text-slate-800');
         }
 
-        // --- CONTROLS ---
-        
-        // Listen for FEN paste
+        // === CONTROLS ===
         $('#fenInput').on('change', function() {
-            var val = $(this).val();
-            if(val === 'start') {
+            const val = $(this).val();
+            if (val === 'start') {
                 game.reset();
             } else {
-                var loaded = game.load(val);
-                if(!loaded) {
+                if (!game.load(val)) {
                     alert("Invalid FEN!");
                     return;
                 }
             }
             board.position(game.fen());
+            originalFen = game.fen();
             updateStatus();
+            clearArrows();
         });
 
         function resetGame() {
             game.reset();
-            board.start();
+            board.position('start');
+            originalFen = game.fen();
             updateStatus();
-            document.getElementById('userMove').value = '';
-            document.getElementById('bestMove').value = '';
-            document.getElementById('analysisResult').classList.add('hidden');
+            $('#userMove').val('');
+            $('#bestMove').val('');
+            $('#analysisResult').addClass('hidden');
+            $('#deepAnalysisSection').addClass('hidden');
+            clearArrows();
         }
 
         function loadPGN() {
-            var pgn = $pgn.val();
-            var loaded = game.load_pgn(pgn);
-            if(loaded) {
+            const pgn = $('#pgnInput').val();
+            if (game.load_pgn(pgn)) {
                 board.position(game.fen());
+                originalFen = game.fen();
                 updateStatus();
                 alert("Game loaded successfully!");
             } else {
@@ -259,89 +468,579 @@
             }
         }
 
-        // --- ANALYSIS SIMULATION ---
-        async function analyzeMove() {
-            var userMove = document.getElementById('userMove').value;
-            var bestMove = document.getElementById('bestMove').value;
-            var btn = document.getElementById('analyzeBtn');
+        // === CLOUD ANALYSIS ===
+        async function cloudAnalyze(fen, multipv = 3) {
+            try {
+                const res = await fetch('https://chess-api.com/v1', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fen, multipv })
+                });
+                const data = await res.json();
+                
+                return data.lines.map(line => {
+                    const moves = line.pv.split(' ');
+                    const temp = new Chess(fen);
+                    const sanMoves = moves.map(uci => {
+                        const move = temp.move(uci, { sloppy: true });
+                        return move ? move.san : uci;
+                    });
+                    
+                    return {
+                        pv: sanMoves,
+                        uci: moves,
+                        eval: line.score,
+                        comment: line.comment || ''
+                    };
+                });
+            } catch (e) {
+                console.error('Cloud analysis error:', e);
+                return [];
+            }
+        }
 
-            if (!userMove || !bestMove) {
-                alert("Please enter both 'Your Move' and 'Best Move' to compare.");
+        // === DEEP ANALYSIS ===
+        async function analyzeMove() {
+            const userSan = $('#userMove').val().trim();
+            
+            if (!userSan) {
+                alert('Please enter your move first (e.g., e4, Nf3, Qxh7)');
                 return;
             }
 
-            // UI Loading State
-            btn.innerHTML = "Analyzing...";
-            btn.disabled = true;
+            // Validate user's move
+            const testGame = new Chess(originalFen);
+            const userMove = testGame.move(userSan, { sloppy: true });
             
-            // Mock Delay
-            await new Promise(r => setTimeout(r, 1000));
+            if (!userMove) {
+                alert('Invalid move! Please check the notation.');
+                return;
+            }
 
-            // Logic
-            var cleanUser = userMove.replace(/[+#]/g, '').trim();
-            var cleanBest = bestMove.replace(/[+#]/g, '').trim();
-            var isCorrect = cleanUser === cleanBest;
+            // UI Loading
+            const btn = $('#analyzeBtn');
+            btn.html('<i data-lucide="loader" class="w-5 h-5 animate-spin"></i> Analyzing...').prop('disabled', true);
+            lucide.createIcons();
 
-            // Render Result
-            var resultBox = document.getElementById('analysisResult');
-            var header = document.getElementById('analysisHeader');
-            var title = document.getElementById('analysisTitle');
-            var icon = document.getElementById('analysisIcon');
-            var text = document.getElementById('analysisText');
-            var advice = document.getElementById('analysisAdvice');
-
-            resultBox.classList.remove('hidden');
-
-            if (isCorrect) {
-                header.className = "p-4 bg-green-100 text-green-800 flex items-center gap-3";
-                title.innerText = "Excellent Move";
-                // Update Icon to check
-                icon.setAttribute('data-lucide', 'check-circle');
-                text.innerText = "You found the best move! This optimizes your position and maintains the initiative.";
-                advice.innerText = "Keep calculating forcing moves like checks and captures.";
-            } else {
-                header.className = "p-4 bg-red-100 text-red-800 flex items-center gap-3";
-                title.innerText = "Mistake / Inaccuracy";
-                // Update Icon to X
-                icon.setAttribute('data-lucide', 'x-circle');
-                text.innerText = "The engine prefers " + bestMove + ". Your move (" + userMove + ") might miss a tactical opportunity or allow the opponent to equalize.";
-                advice.innerText = "Always check for Checks, Captures, and Threats (CCT) before moving.";
+            try {
+                // Get best moves from original position
+                bestVariations = await cloudAnalyze(originalFen, 3);
                 
-                // Add to mistake list
-                addMistake(userMove, bestMove);
+                if (bestVariations.length === 0) {
+                    throw new Error('Cloud analysis unavailable');
+                }
+
+                const originalEval = bestVariations[0].eval;
+                const bestMove = bestVariations[0].pv[0];
+                $('#bestMove').val(bestMove);
+
+                // Get opponent responses to user's move
+                yourVariations = await cloudAnalyze(testGame.fen(), 3);
+                const userEval = yourVariations[0]?.eval || 0;
+                
+                // Calculate evaluation change
+                const delta = Math.abs(originalEval - userEval);
+                
+                // Classify move
+                let moveType, headerClass, iconType;
+                if (delta < 0.3) {
+                    moveType = 'Excellent Move';
+                    headerClass = 'bg-green-100 text-green-800';
+                    iconType = 'check-circle';
+                } else if (delta < 0.8) {
+                    moveType = 'Good Move';
+                    headerClass = 'bg-blue-100 text-blue-800';
+                    iconType = 'check-circle';
+                } else if (delta < 1.5) {
+                    moveType = 'Inaccuracy';
+                    headerClass = 'bg-yellow-100 text-yellow-800';
+                    iconType = 'alert-circle';
+                } else if (delta < 3) {
+                    moveType = 'Mistake';
+                    headerClass = 'bg-orange-100 text-orange-800';
+                    iconType = 'x-circle';
+                } else {
+                    moveType = 'Blunder';
+                    headerClass = 'bg-red-100 text-red-800';
+                    iconType = 'x-circle';
+                }
+
+                // Show analysis result
+                $('#analysisResult').removeClass('hidden');
+                $('#analysisHeader').removeClass().addClass(`p-5 ${headerClass}`);
+                $('#analysisTitle').text(moveType);
+                $('#analysisIcon').attr('data-lucide', iconType);
+                $('#analysisStats').html(`
+                    <strong>Your move:</strong> ${userSan} &nbsp;|&nbsp; 
+                    <strong>Best:</strong> ${bestMove} &nbsp;|&nbsp; 
+                    <strong>Eval change:</strong> ${delta.toFixed(2)}
+                `);
+
+                // Generate explanation
+                if (delta < 0.8) {
+                    $('#analysisText').html(`Your move <strong>${userSan}</strong> is ${userSan === bestMove ? 'the best move' : 'a strong alternative'}! This maintains or improves your position.`);
+                    $('#analysisAdvice').text('Continue with solid play and look for tactical opportunities.');
+                } else {
+                    $('#analysisText').html(`The engine prefers <strong>${bestMove}</strong>. Your move <strong>${userSan}</strong> allows the opponent to gain an advantage. See the detailed analysis below to understand how.`);
+                    $('#analysisAdvice').text('Always check for Checks, Captures, and Threats (CCT) before moving.');
+                    
+                    // Add to mistakes
+                    addMistake(userSan, bestMove, moveType, delta.toFixed(2));
+                }
+
+                lucide.createIcons();
+
+                // Draw arrow for best move
+                clearArrows();
+                if (bestVariations[0].uci[0]) {
+                    const uci = bestVariations[0].uci[0];
+                    drawArrow(uci.slice(0, 2), uci.slice(2, 4), 'green');
+                }
+
+                // Update eval display
+                $('#evalScore').text(originalEval.toFixed(1))
+                    .removeClass('text-green-600 text-red-600 text-slate-800')
+                    .addClass(originalEval > 0 ? 'text-green-600' : originalEval < 0 ? 'text-red-600' : 'text-slate-800');
+
+                // Setup deep analysis
+                if (delta >= 0.8) {
+                    setupDeepAnalysis();
+                }
+
+            } catch (error) {
+                alert('Analysis failed. Please check your internet connection.');
+                console.error(error);
+            } finally {
+                btn.html('<i data-lucide="target" class="w-5 h-5"></i> Deep Analysis').prop('disabled', false);
+                lucide.createIcons();
+            }
+        }
+
+        // === DEEP ANALYSIS SETUP ===
+        function setupDeepAnalysis() {
+            $('#deepAnalysisSection').removeClass('hidden');
+            
+            currentMode = 'your';
+            currentVariation = 0;
+            currentStep = 0;
+            
+            // Populate variation selector
+            updateVariationSelector();
+            
+            // Initialize display
+            updateAnalysisDisplay();
+            
+            // Highlight mode button
+            $('#modeYourMove').removeClass('bg-red-600').addClass('bg-red-700');
+            $('#modeBestMove').removeClass('bg-green-700').addClass('bg-green-600');
+        }
+
+        function updateVariationSelector() {
+            const vars = currentMode === 'your' ? yourVariations : bestVariations;
+            const select = $('#variationSelect');
+            select.empty();
+            
+            vars.forEach((v, i) => {
+                const label = `Line ${i + 1}: ${v.pv[0]} (eval: ${v.eval})`;
+                select.append(`<option value="${i}">${label}</option>`);
+            });
+            
+            select.val(currentVariation);
+        }
+
+        function updateAnalysisDisplay() {
+            const vars = currentMode === 'your' ? yourVariations : bestVariations;
+            const variation = vars[currentVariation];
+            
+            if (!variation) return;
+
+            // Create analysis game
+            analysisGame = new Chess(originalFen);
+            
+            // If analyzing user's move, play it first
+            if (currentMode === 'your') {
+                const userSan = $('#userMove').val().trim();
+                analysisGame.move(userSan, { sloppy: true });
+            }
+
+            // Apply moves up to current step
+            for (let i = 0; i < currentStep; i++) {
+                analysisGame.move(variation.pv[i], { sloppy: true });
+            }
+
+            // Update board
+            board.position(analysisGame.fen());
+            clearArrows();
+
+            // Draw arrows for next move
+            if (currentStep < variation.pv.length) {
+                const nextUci = variation.uci[currentStep];
+                if (nextUci && nextUci.length >= 4) {
+                    drawArrow(nextUci.slice(0, 2), nextUci.slice(2, 4), 'green');
+                }
+                
+                // Highlight threats
+                highlightThreats(analysisGame);
+            }
+
+            // Update all displays
+            updateTimeline();
+            updateMoveExplanation();
+            updateTacticalAnalysis();
+            updateVariationSteps();
+        }
+
+        function highlightThreats(game) {
+            const moves = game.moves({ verbose: true });
+            const attacks = {};
+            
+            // Draw attack arrows
+            moves.forEach(move => {
+                if (move.captured) {
+                    const key = `${move.from}-${move.to}`;
+                    if (!attacks[key]) {
+                        drawArrow(move.from, move.to, 'red');
+                        attacks[key] = true;
+                    }
+                }
+            });
+        }
+
+        function updateTimeline() {
+            const vars = currentMode === 'your' ? yourVariations : bestVariations;
+            const variation = vars[currentVariation];
+            const timeline = $('#timeline');
+            timeline.empty();
+
+            // Add start position
+            timeline.append(createTimelineDot(0, 'Start', currentStep === 0));
+
+            // Add each move
+            for (let i = 0; i < variation.pv.length; i++) {
+                const isActive = (i + 1) === currentStep;
+                const moveNum = Math.floor(i / 2) + 1;
+                const label = `${moveNum}${i % 2 === 0 ? '.' : '...'}`;
+                timeline.append(createTimelineDot(i + 1, label, isActive));
+            }
+        }
+
+        function createTimelineDot(step, label, isActive) {
+            const bgColor = isActive ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-700';
+            const dot = $(`
+                <div class="timeline-dot ${bgColor} ${isActive ? 'active' : ''}" data-step="${step}">
+                    ${label}
+                </div>
+            `);
+            
+            dot.click(function() {
+                currentStep = step;
+                updateAnalysisDisplay();
+            });
+            
+            return dot;
+        }
+
+        function updateMoveExplanation() {
+            const vars = currentMode === 'your' ? yourVariations : bestVariations;
+            const variation = vars[currentVariation];
+            const container = $('#moveExplanation');
+            container.empty();
+
+            if (currentStep === 0) {
+                const intro = currentMode === 'your' 
+                    ? `<div class="bg-red-50 p-3 rounded text-sm"><strong>Starting Position After Your Move</strong><br>This shows how your opponent can punish your move.</div>`
+                    : `<div class="bg-green-50 p-3 rounded text-sm"><strong>Starting Position</strong><br>This shows the optimal continuation.</div>`;
+                container.append(intro);
+            } else {
+                const moveIndex = currentStep - 1;
+                const move = variation.pv[moveIndex];
+                const moveNum = Math.floor(moveIndex / 2) + 1;
+                const side = moveIndex % 2 === 0 ? 'White' : 'Black';
+                
+                const material = calculateMaterial(analysisGame.fen());
+                const commentary = generateMoveCommentary(analysisGame);
+                
+                container.append(`
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <div class="font-bold text-lg mb-2">${moveNum}. ${move}</div>
+                        <div class="text-sm text-gray-600 mb-2">${side} to move</div>
+                        <div class="text-sm mb-2">${commentary}</div>
+                        <div class="text-xs text-gray-500">Material: ♔${material.white} vs ♚${material.black} (${material.diff > 0 ? '+' : ''}${material.diff})</div>
+                    </div>
+                `);
+            }
+
+            // End of variation message
+            if (currentStep === variation.pv.length) {
+                const finalMsg = currentMode === 'your'
+                    ? '<div class="bg-red-100 p-3 rounded text-sm font-bold">Position after opponent\'s punishment. The advantage is clear.</div>'
+                    : '<div class="bg-green-100 p-3 rounded text-sm font-bold">Optimal position reached. Strong play maintained.</div>';
+                container.append(finalMsg);
+            }
+        }
+
+        function updateTacticalAnalysis() {
+            const container = $('#tacticalAnalysis');
+            container.empty();
+
+            // Check status
+            if (analysisGame.in_check()) {
+                container.append('<div class="flex items-start gap-2 text-red-700"><i data-lucide="alert-triangle" class="w-4 h-4 mt-1"></i><span>King is in check!</span></div>');
+            }
+
+            // Attacked pieces
+            const threats = findThreats(analysisGame);
+            if (threats.length > 0) {
+                container.append(`<div class="font-bold text-sm mb-1">Pieces Under Attack:</div>`);
+                threats.forEach(threat => {
+                    container.append(`<div class="flex items-start gap-2 text-orange-700 text-sm"><span>• ${threat}</span></div>`);
+                });
+            }
+
+            // Material advantage
+            const material = calculateMaterial(analysisGame.fen());
+            if (Math.abs(material.diff) > 1) {
+                const color = material.diff > 0 ? 'text-green-700' : 'text-red-700';
+                container.append(`<div class="flex items-start gap-2 ${color} text-sm mt-2"><i data-lucide="trophy" class="w-4 h-4 mt-0.5"></i><span>Material advantage: ${Math.abs(material.diff)} points</span></div>`);
+            }
+
+            if (container.children().length === 0) {
+                container.append('<div class="text-gray-500 text-sm">No immediate tactical threats</div>');
+            }
+
+            lucide.createIcons();
+        }
+
+        function updateVariationSteps() {
+            const vars = currentMode === 'your' ? yourVariations : bestVariations;
+            const variation = vars[currentVariation];
+            const container = $('#variationSteps');
+            container.empty();
+
+            const tempGame = new Chess(originalFen);
+            
+            // Add user's move if in 'your' mode
+            if (currentMode === 'your') {
+                const userMove = $('#userMove').val().trim();
+                tempGame.move(userMove, { sloppy: true });
+                container.append(`
+                    <div class="variation-step p-3 rounded bg-red-50 border-l-4 border-red-400">
+                        <span class="font-bold">0. Your move: ${userMove}</span>
+                    </div>
+                `);
+            }
+
+            // Add all moves in variation
+            variation.pv.forEach((move, i) => {
+                const isActive = (i + 1) === currentStep;
+                const bgColor = isActive ? 'bg-blue-100 border-blue-500' : 'bg-gray-50 border-gray-200';
+                const moveNum = Math.floor(i / 2) + 1;
+                
+                tempGame.move(move, { sloppy: true });
+                const fen = tempGame.fen();
+                const material = calculateMaterial(fen);
+                
+                const step = $(`
+                    <div class="variation-step p-3 rounded ${bgColor} border-l-4 ${isActive ? 'active' : ''}" data-step="${i + 1}">
+                        <div class="flex justify-between items-center">
+                            <span class="font-bold">${moveNum}. ${move}</span>
+                            <span class="text-xs text-gray-600">Material: ${material.diff > 0 ? '+' : ''}${material.diff}</span>
+                        </div>
+                    </div>
+                `);
+                
+                step.click(function() {
+                    currentStep = i + 1;
+                    updateAnalysisDisplay();
+                });
+                
+                container.append(step);
+            });
+        }
+
+        // === HELPER FUNCTIONS ===
+        function calculateMaterial(fen) {
+            const temp = new Chess(fen);
+            const board = temp.board();
+            let white = 0, black = 0;
+
+            board.forEach(row => {
+                row.forEach(square => {
+                    if (square) {
+                        const value = PIECE_VALUES[square.type];
+                        if (square.color === 'w') {
+                            white += value;
+                        } else {
+                            black += value;
+                        }
+                    }
+                });
+            });
+
+            return { white, black, diff: white - black };
+        }
+
+        function findThreats(game) {
+            const threats = [];
+            const moves = game.moves({ verbose: true });
+            const attacked = {};
+
+            moves.forEach(move => {
+                if (move.captured) {
+                    const key = move.to;
+                    if (!attacked[key]) {
+                        threats.push(`${move.captured.toUpperCase()} on ${move.to}`);
+                        attacked[key] = true;
+                    }
+                }
+            });
+
+            return threats;
+        }
+
+        function generateMoveCommentary(game) {
+            const history = game.history({ verbose: true });
+            const lastMove = history[history.length - 1];
+            
+            if (!lastMove) return 'Position established.';
+            
+            const comments = [];
+            
+            if (lastMove.captured) {
+                const value = PIECE_VALUES[lastMove.captured];
+                comments.push(`Captures ${lastMove.captured.toUpperCase()} (worth ${value} points)`);
             }
             
-            // Refresh icons
-            lucide.createIcons();
+            if (game.in_check()) {
+                comments.push('Delivers check');
+            }
             
-            // Reset Button
-            btn.innerHTML = '<i data-lucide="target" class="w-5 h-5 mr-2"></i> Deep Analysis';
-            btn.disabled = false;
+            if (lastMove.piece === 'q') {
+                comments.push('Queen activity');
+            } else if (lastMove.piece === 'r') {
+                comments.push('Rook development');
+            } else if (lastMove.piece === 'b' || lastMove.piece === 'n') {
+                comments.push('Minor piece development');
+            }
+            
+            return comments.length > 0 ? comments.join('. ') + '.' : 'Positional move.';
         }
 
-        function addMistake(user, best) {
-            var container = document.getElementById('mistakesContainer');
-            var list = document.getElementById('mistakesList');
-            container.classList.remove('hidden');
+        // === NAVIGATION FUNCTIONS ===
+        function switchAnalysisMode(mode) {
+            currentMode = mode;
+            currentVariation = 0;
+            currentStep = 0;
             
-            var li = document.createElement('li');
-            li.className = "p-3 text-sm flex justify-between";
-            li.innerHTML = `<span>You played <strong>${user}</strong></span><span class="text-gray-500">Best was ${best}</span>`;
-            list.appendChild(li);
-        }
-
-        function setMode(mode) {
-            // Simple visual toggle for now
-            var btnAnalyze = document.getElementById('btn-analyze');
-            var btnQuiz = document.getElementById('btn-quiz');
-            
-            if(mode === 'analyze') {
-                btnAnalyze.className = "px-4 py-1.5 rounded-full text-sm font-medium transition bg-blue-600";
-                btnQuiz.className = "px-4 py-1.5 rounded-full text-sm font-medium transition hover:bg-slate-800";
+            if (mode === 'your') {
+                $('#modeYourMove').removeClass('bg-red-600').addClass('bg-red-700');
+                $('#modeBestMove').removeClass('bg-green-700').addClass('bg-green-600');
             } else {
-                btnQuiz.className = "px-4 py-1.5 rounded-full text-sm font-medium transition bg-blue-600";
-                btnAnalyze.className = "px-4 py-1.5 rounded-full text-sm font-medium transition hover:bg-slate-800";
-                alert("Quiz Mode Active: Hide the 'Best Move' and try to guess it!");
+                $('#modeBestMove').removeClass('bg-green-600').addClass('bg-green-700');
+                $('#modeYourMove').removeClass('bg-red-700').addClass('bg-red-600');
+            }
+            
+            updateVariationSelector();
+            updateAnalysisDisplay();
+        }
+
+        function changeVariation() {
+            currentVariation = parseInt($('#variationSelect').val());
+            currentStep = 0;
+            updateAnalysisDisplay();
+        }
+
+        function goToMove(direction) {
+            const vars = currentMode === 'your' ? yourVariations : bestVariations;
+            const variation = vars[currentVariation];
+            const maxStep = variation.pv.length;
+
+            switch (direction) {
+                case 'first':
+                    currentStep = 0;
+                    break;
+                case 'prev':
+                    if (currentStep > 0) currentStep--;
+                    break;
+                case 'next':
+                    if (currentStep < maxStep) currentStep++;
+                    break;
+                case 'last':
+                    currentStep = maxStep;
+                    break;
+            }
+
+            updateAnalysisDisplay();
+        }
+
+        function toggleAutoPlay() {
+            if (autoPlayInterval) {
+                clearInterval(autoPlayInterval);
+                autoPlayInterval = null;
+                $('#autoPlayBtn').html('<i data-lucide="play" class="w-4 h-4"></i> Auto Play');
+            } else {
+                $('#autoPlayBtn').html('<i data-lucide="pause" class="w-4 h-4"></i> Pause');
+                autoPlayInterval = setInterval(() => {
+                    const vars = currentMode === 'your' ? yourVariations : bestVariations;
+                    const variation = vars[currentVariation];
+                    
+                    if (currentStep < variation.pv.length) {
+                        currentStep++;
+                        updateAnalysisDisplay();
+                    } else {
+                        toggleAutoPlay();
+                    }
+                }, 1500);
+            }
+            lucide.createIcons();
+        }
+
+        // === MISTAKES TRACKING ===
+        function addMistake(user, best, type, delta) {
+            const container = $('#mistakesContainer');
+            const list = $('#mistakesList');
+            container.removeClass('hidden');
+            
+            const typeColors = {
+                'Blunder': 'text-red-600',
+                'Mistake': 'text-orange-600',
+                'Inaccuracy': 'text-yellow-600'
+            };
+            
+            const li = $(`
+                <li class="p-3 text-sm">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <span class="font-bold ${typeColors[type] || 'text-gray-600'}">${type}</span> • 
+                            You played <strong>${user}</strong>
+                        </div>
+                        <div class="text-gray-500">Best: <strong>${best}</strong> (Δ${delta})</div>
+                    </div>
+                </li>
+            `);
+            
+            list.prepend(li);
+            
+            // Keep only last 5
+            if (list.children().length > 5) {
+                list.children().last().remove();
+            }
+        }
+
+        // === MODE SWITCH ===
+        function setMode(mode) {
+            const btnAnalyze = $('#btn-analyze');
+            const btnQuiz = $('#btn-quiz');
+            
+            if (mode === 'analyze') {
+                btnAnalyze.removeClass('hover:bg-slate-800').addClass('bg-blue-600');
+                btnQuiz.removeClass('bg-blue-600').addClass('hover:bg-slate-800');
+                $('#bestMove').show();
+            } else {
+                btnQuiz.removeClass('hover:bg-slate-800').addClass('bg-blue-600');
+                btnAnalyze.removeClass('bg-blue-600').addClass('hover:bg-slate-800');
+                $('#bestMove').hide();
+                alert("Quiz Mode: Try to find the best move without hints!");
             }
         }
     </script>
