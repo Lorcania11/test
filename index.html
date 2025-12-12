@@ -1,571 +1,292 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chess Move Analyzer</title>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stockfish Chess Analyzer</title>
+  <script src="https://cdn.jsdelivr.net/npm/stockfish@16/src/stockfish.js"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/chess.js@1.0.0-beta.6/chess.min.js"></script>
+  <style>
+    .square { width: 70px; height: 70px; }
+    .light { background-color: #f0d9b5; }
+    .dark { background-color: #b58863; }
+    .highlight-from { box-shadow: inset 0 0 0 5px rgba(255,255,0,0.8); }
+    .highlight-to { box-shadow: inset 0 0 0 5px rgba(0,255,0,0.8); }
+    .arrow { stroke: #48bb78; stroke-width: 10; marker-end: url(#arrowhead); }
+  </style>
 </head>
-<body>
-    <div id="root"></div>
-    <script type="text/babel">
-      const { useState, useEffect } = React;
-      const { Play, RotateCcw, Volume2, ChevronRight, AlertCircle, Download, BookOpen, Target, HelpCircle, Eye, Lightbulb } = lucide;
-      
-      const ChessMoveAnalyzer = () => {
-        const [mode, setMode] = useState('analyze');
-        const [fen, setFen] = useState('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
-        const [lichessUrl, setLichessUrl] = useState('');
-        const [userMove, setUserMove] = useState('');
-        const [bestMove, setBestMove] = useState('');
-        const [analyzing, setAnalyzing] = useState(false);
-        const [analysis, setAnalysis] = useState(null);
-        const [currentBoard, setCurrentBoard] = useState(null);
-        const [selectedSquare, setSelectedSquare] = useState(null);
-        const [highlightedSquares, setHighlightedSquares] = useState({});
-        const [animatingMove, setAnimatingMove] = useState(null);
-        const [showHint, setShowHint] = useState(false);
-        const [quizAnswer, setQuizAnswer] = useState('');
-        const [mistakes, setMistakes] = useState([]);
-        const [patterns, setPatterns] = useState({});
-        const [practiceMode, setPracticeMode] = useState(false);
-        const [practiceStep, setPracticeStep] = useState(0);
-      
-        useEffect(() => {
-          loadMistakes();
-          loadPatterns();
-        }, []);
-      
-        const loadMistakes = async () => {
-          // Mock storage loading for demonstration
-          setMistakes([]); 
-        };
-      
-        const loadPatterns = async () => {
-          // Mock storage loading for demonstration
-          setPatterns({});
-        };
-      
-        const saveMistake = async (mistakeData) => {
-          console.log("Mock saving mistake:", mistakeData);
-        };
-      
-        const updatePatterns = async (tacticalPattern) => {
-          console.log("Mock updating pattern:", tacticalPattern);
-        };
-      
-        const parseFEN = (fenStr) => {
-          const board = Array(8).fill(null).map(() => Array(8).fill(' '));
-          const [position] = fenStr.split(' ');
-          const rows = position.split('/');
-          
-          rows.forEach((row, i) => {
-            let col = 0;
-            for (let char of row) {
-              if (isNaN(char)) {
-                board[i][col] = char;
-                col++;
-              } else {
-                col += parseInt(char);
-              }
+<body class="bg-gray-900 text-white min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const ChessAnalyzer = () => {
+      const [fen, setFen] = useState("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+      const [mode, setMode] = useState("analyze"); // analyze, quiz, practice
+      const [userMove, setUserMove] = useState("");
+      const [bestMove, setBestMove] = useState("");
+      const [evaluation, setEvaluation] = useState("0.0");
+      const [bestLine, setBestLine] = useState("");
+      const [arrows, setArrows] = useState([]);
+      const [selectedSquare, setSelectedSquare] = useState(null);
+      const [mistakes, setMistakes] = useState([]);
+      const [patterns, setPatterns] = useState({});
+      const [thinking, setThinking] = useState(false);
+      const [quizActive, setQuizActive] = useState(false);
+      const chessRef = useRef(new Chess());
+      const stockfishRef = useRef(null);
+
+      // Load Stockfish
+      useEffect(() => {
+        const sf = new Worker("https://cdn.jsdelivr.net/npm/stockfish@16/src/stockfish.js");
+        sf.postMessage("uci");
+        sf.postMessage("isready");
+        stockfishRef.current = sf;
+
+        // Load saved data
+        const savedMistakes = localStorage.getItem("chessMistakes");
+        if (savedMistakes) setMistakes(JSON.parse(savedMistakes));
+        const savedPatterns = localStorage.getItem("chessPatterns");
+        if (savedPatterns) setPatterns(JSON.parse(savedPatterns));
+
+        return () => sf.terminate();
+      }, []);
+
+      const chess = chessRef.current;
+      chess.load(fen);
+
+      const getBoard = () => {
+        const board = Array(8).fill(null).map(() => Array(8).fill(null));
+        const rows = fen.split(" ")[0].split("/");
+        let r = 0, c = 0;
+        for (let row of rows) {
+          for (let ch of row) {
+            if (isNaN(ch)) board[r][c++] = ch;
+            else c += parseInt(ch);
+          }
+          r++; c = 0;
+        }
+        return board;
+      };
+
+      const squareName = (r, c) => String.fromCharCode(97 + c) + (8 - r);
+      const nameToCoord = (name) => ({ r: 8 - parseInt(name[1]), c: name.charCodeAt(0) - 97 });
+
+      const pieceSymbol = {
+        'K': '♔','Q': '♕','R': '♖','B': '♗','N': '♘','P': '♙',
+        'k': '♚','q': '♛','r': '♜','b': '♝','n': '♞','p': '♟'
+      };
+
+      const analyzePosition = () => {
+        if (!stockfishRef.current) return;
+        setThinking(true);
+        setArrows([]);
+
+        const sf = stockfishRef.current;
+        sf.onmessage = (event) => {
+          const line = event.data;
+          if (line.startsWith("info depth")) {
+            const match = line.match(/score cp (-?\d+).*pv\s+(\S+)/);
+            if (match) {
+              const score = (parseInt(match[1]) / 100).toFixed(1);
+              setEvaluation(chess.turn() === 'w' ? score : (-score).toFixed(1));
+              const pvMove = match[2];
+              const from = pvMove.slice(0,2), to = pvMove.slice(2,4);
+              setArrows([{ from, to }]);
+              setBestMove(chess.move({ from, to, promotion: pvMove[4] || 'q' })?.san || "");
             }
-          });
-          
-          return board;
-        };
-      
-        const parseLichessUrl = async (url) => {
-          alert('Lichess API fetching is disabled in this mock environment.');
-          // Original Lichess API fetch logic removed for local execution stability.
-        };
-      
-        const pieceSymbols = {
-          // Updated to a different style as requested (Lichess/Stockfish standard)
-          'K': '♔', 'Q': '♕', 'R': '♖', 'B': '♗', 'N': '♘', 'P': '♙',
-          'k': '♚', 'q': '♛', 'r': '♜', 'b': '♝', 'n': '♞', 'p': '♟'
-        };
-      
-        const squareToCoords = (square) => {
-          if (square.length !== 2 || square[0] < 'a' || square[0] > 'h' || square[1] < '1' || square[1] > '8') {
-             console.error("Invalid square notation:", square);
-             return null;
           }
-          const col = square.charCodeAt(0) - 97; // 'a' is 0, 'h' is 7
-          const row = 8 - parseInt(square[1]); // '8' is row 0, '1' is row 7
-          return [row, col];
-        };
-      
-        const coordsToSquare = (row, col) => {
-          return String.fromCharCode(97 + col) + (8 - row);
-        };
-      
-        const parseMove = (notation) => {
-          // Comprehensive regex for standard algebraic notation (SAN)
-          const match = notation.match(/([KQRBN])?([a-h]?[1-8]?)?([x-])?([a-h][1-8])(=[QRBN])?([+#])?/i);
-          if (match) {
-            const [, piece, fromSquare, captureOrDash, toSquare, promotion] = match;
-            return {
-              piece: piece || 'P',
-              toSquare: toSquare ? toSquare.toLowerCase() : null,
-              fromSquare: fromSquare ? fromSquare.toLowerCase() : null, // Not strictly used for animation, but good for parsing
-              capture: !!captureOrDash && captureOrDash !== '-',
-              promotion: promotion?.slice(1)
-            };
+          if (line.includes("bestmove")) {
+            const best = line.match(/bestmove\s+(\S+)/);
+            if (best) {
+              const move = best[1];
+              const from = move.slice(0,2), to = move.slice(2,4);
+              const san = chess.move({ from, to, promotion: move[4] || 'q' })?.san;
+              setBestMove(san || "");
+              setArrows([{ from, to }]);
+              setThinking(false);
+            }
           }
-          
-          // Special cases for Castling
-          if (notation === 'O-O' || notation === 'o-o') return { piece: 'K', toSquare: 'g1', fromSquare: 'e1' }; // White Kingside
-          if (notation === 'O-O-O' || notation === 'o-o-o') return { piece: 'K', toSquare: 'c1', fromSquare: 'e1' }; // White Queenside
-          // Black Castling is complex to guess without FEN, so we stick to the common moves for analysis purposes.
-          
-          // Fallback for simple pawn moves like 'e4'
-          const simpleMoveMatch = notation.match(/([a-h][1-8])/);
-          if (simpleMoveMatch) {
-            return { piece: 'P', toSquare: simpleMoveMatch[1].toLowerCase() };
-          }
-          
-          return null;
         };
-      
-        const getMaterialCount = (board) => {
-          const values = { p: 1, n: 3, b: 3, r: 5, q: 9 };
-          let white = 0, black = 0;
-          
-          board.forEach(row => {
-            row.forEach(piece => {
-              if (piece !== ' ') {
-                const val = values[piece.toLowerCase()] || 0;
-                if (piece === piece.toUpperCase()) white += val;
-                else black += val;
-              }
-            });
-          });
-          
-          return { white, black, advantage: white - black };
-        };
-      
-        // MOCK ANALYSIS FUNCTION to fix the user's non-functional API issue
-        const mockAnalyzeMove = () => {
-             // Example analysis based on common chess scenarios
-             const classifications = ['blunder', 'mistake', 'good', 'excellent', 'inaccuracy'];
-             const patterns = ['fork', 'pin', 'skewer', 'discovery', 'double_attack', 'mate_threat', 'positional', 'other'];
-             const classification = userMove === bestMove ? 'excellent' : classifications[Math.floor(Math.random() * classifications.length)];
-             const tacticalPattern = patterns[Math.floor(Math.random() * patterns.length)];
-             
-             return {
-                "moveClassification": classification,
-                "isEquallyGood": userMove === bestMove,
-                "explanation": userMove === bestMove ? "The perfect move! You saw the deep tactical opportunity and seized it." : "Your move missed the critical tactical moment in the position.",
-                "userMoveConsequence": `After ${userMove}, your opponent can respond with a strong counter-move that negates your advantage.`,
-                "bestMoveReason": `The best move, ${bestMove}, exploits a weakness in the opponent's position, leading to a forced win of material or a checkmate threat.`,
-                "opponentBestResponse": "Qh7+",
-                "keyDifference": "The main difference is that the best move forces a concrete advantage, while your move allows the opponent to consolidate.",
-                "userContinuation": "2. ... c5 3. d3 d6",
-                "bestContinuation": "2. ... h6 3. g4 Nxg4 4. hxg4 Bxg4",
-                "alternativeMoves": ["Nd7", "O-O"],
-                "alternativeExplanations": ["Nd7 is a solid developing move.", "O-O is a safe castling option."],
-                "tacticalPattern": tacticalPattern,
-                "difficulty": "intermediate",
-                "advice": "Focus on identifying forced sequences and immediate threats before making a move.",
-                "hint": "What is the most aggressive square for your Queen?"
-             };
-        };
-      
-        const analyzeMove = async () => {
-          if (!userMove || !bestMove) {
-            alert('Please enter both your move and the best move');
-            return;
-          }
-      
-          setAnalyzing(true);
-          
+
+        sf.postMessage("position fen " + fen);
+        sf.postMessage("go depth 20");
+      };
+
+      const handleSquareClick = (r, c) => {
+        const sq = squareName(r, c);
+        if (selectedSquare) {
+          const from = selectedSquare;
           try {
-            // Using the mock function instead of the non-functional external API call
-            // const parsed = mockAnalyzeMove(); // Using the immediate mock for reliability
-            
-            // Simulating API latency for better user experience
-            await new Promise(resolve => setTimeout(resolve, 1500)); 
-            const parsed = mockAnalyzeMove(); 
-            
-            setAnalysis(parsed);
-            setCurrentBoard(parseFEN(fen));
-            
-            const userParsed = parseMove(userMove);
-            const bestParsed = parseMove(bestMove);
-            
-            const highlights = {};
-            if (userParsed) {
-               const coords = squareToCoords(userParsed.toSquare);
-               if (coords) highlights[`${coords[0]}-${coords[1]}`] = 'user';
+            const move = chess.move({ from, to: sq, promotion: 'q' });
+            if (move) {
+              setFen(chess.fen());
+              setUserMove(move.san);
+              setSelectedSquare(null);
+              if (mode === "quiz") checkQuizAnswer(move.san);
             }
-            if (bestParsed) {
-               const coords = squareToCoords(bestParsed.toSquare);
-               if (coords) highlights[`${coords[0]}-${coords[1]}`] = 'best';
-            }
-            setHighlightedSquares(highlights);
-            
-            if (!['good', 'excellent'].includes(parsed.moveClassification)) {
-              await saveMistake({
-                fen,
-                userMove,
-                bestMove,
-                classification: parsed.moveClassification,
-                pattern: parsed.tacticalPattern,
-                difficulty: parsed.difficulty
-              });
-              await updatePatterns(parsed.tacticalPattern);
-            }
-            
-          } catch (error) {
-            console.error('Analysis error:', error);
-            // This alert is now only for internal script errors, not API failure
-            alert('Error analyzing move. Check console for details. (This is an internal error, not an API issue)');
-          } finally {
-            setAnalyzing(false);
-          }
-        };
-      
-        const animateMove = (fromSquare, toSquare) => {
-          setAnimatingMove({ from: fromSquare, to: toSquare });
-          setTimeout(() => setAnimatingMove(null), 500);
-        };
-      
-        const handleSquareClick = (row, col) => {
-          const board = currentBoard || parseFEN(fen);
-          const piece = board[row][col];
-          
-          if (selectedSquare) {
-            const [fromRow, fromCol] = selectedSquare;
-            const movingPiece = board[fromRow][fromCol];
-            
-            if (movingPiece !== ' ') {
-              const newBoard = board.map(r => [...r]);
-              newBoard[fromRow][fromCol] = ' ';
-              newBoard[row][col] = movingPiece;
-              
-              setCurrentBoard(newBoard);
-              animateMove(coordsToSquare(fromRow, fromCol), coordsToSquare(row, col));
-              
-              const moveSquare = coordsToSquare(row, col);
-              // Simple move notation for display: Piece + Target Square
-              let moveNotation = '';
-              if (movingPiece.toUpperCase() === 'P') {
-                 moveNotation = moveSquare;
-              } else {
-                 moveNotation = movingPiece.toUpperCase() + moveSquare;
-              }
-              setUserMove(moveNotation);
-            }
+          else setSelectedSquare(null);
+          } catch (e) {
             setSelectedSquare(null);
-          } else if (piece !== ' ') {
-            setSelectedSquare([row, col]);
           }
-        };
-      
-        const exportToPGN = () => {
-          if (!analysis) return;
-          
-          const pgn = `[Event "Analysis"]
-[Site "Chess Analyzer"]
-[Date "${new Date().toISOString().split('T')[0]}"]
-[White "Student"]
-[Black "Opponent"]
-[Result "*"]
+        } else if (chess.get(sq)) {
+          setSelectedSquare(sq);
+        }
+      };
+
+      const startQuiz = () => {
+        setMode("quiz");
+        setQuizActive(true);
+        setUserMove("");
+        setBestMove("");
+        setArrows([]);
+        analyzePosition();
+      };
+
+      const checkQuizAnswer = (move) => {
+        if (move === bestMove) {
+          alert("Correct! Great job!");
+          setQuizActive(false);
+        } else {
+          const mistake = { fen, userMove: move, bestMove, date: new Date().toLocaleString() };
+          const updated = [...mistakes, mistake];
+          setMistakes(updated);
+          localStorage.setItem("chessMistakes", JSON.stringify(updated));
+          alert(`Wrong. Best was ${bestMove}`);
+        }
+      };
+
+      const exportPGN = () => {
+        const pgn = `[Event "Stockfish Analysis"]
 [FEN "${fen}"]
 
-{Your move: ${userMove} - ${analysis.moveClassification}}
-1. ${userMove} {${analysis.userMoveConsequence}} (${analysis.userContinuation})
-
-{Best move: ${bestMove}}
-1. ${bestMove} {${analysis.bestMoveReason}} (${analysis.bestContinuation})
-
-{Key Difference: ${analysis.keyDifference}}
-{Advice: ${analysis.advice}}
-*`;
-      
-          const blob = new Blob([pgn], { type: 'text/plain' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `analysis-${Date.now()}.pgn`;
-          a.click();
-        };
-      
-        const speak = (text) => {
-          if ('speechSynthesis' in window) {
-            window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.rate = 0.9;
-            window.speechSynthesis.speak(utterance);
-          }
-        };
-      
-        const startQuizMode = () => {
-          setMode('quiz');
-          setShowHint(false);
-          setQuizAnswer('');
-          alert('Quiz mode started! Try to identify the main tactical pattern or threat.');
-        };
-      
-        const checkQuizAnswer = async () => {
-          alert('Quiz check is disabled in this mock environment. You answered: ' + quizAnswer);
-          // Original Quiz check API logic removed for local execution stability.
-          setMode('analyze');
-        };
-      
-        const getMoveClassColor = (classification) => {
-          const colors = {
-            'blunder': 'bg-red-100 text-red-800 border-red-300',
-            'mistake': 'bg-orange-100 text-orange-800 border-orange-300',
-            'inaccuracy': 'bg-yellow-100 text-yellow-800 border-yellow-300',
-            'good': 'bg-green-100 text-green-800 border-green-300',
-            'excellent': 'bg-blue-100 text-blue-800 border-blue-300'
-          };
-          return colors[classification] || 'bg-gray-100 text-gray-800 border-gray-300';
-        };
-      
-        const renderSquare = (piece, row, col) => {
-          const isLight = (row + col) % 2 === 0;
-          const squareKey = `${row}-${col}`;
-          const isSelected = selectedSquare && selectedSquare[0] === row && selectedSquare[1] === col;
-          const highlight = highlightedSquares[squareKey];
-          
-          let bgColor = isLight ? 'bg-amber-100' : 'bg-amber-700';
-          if (isSelected) bgColor = 'bg-yellow-300';
-          else if (highlight === 'user') bgColor = 'bg-red-300';
-          else if (highlight === 'best') bgColor = 'bg-green-300';
-          
-          return React.createElement('div', {
-              key: squareKey,
-              onClick: () => handleSquareClick(row, col),
-              className: `w-14 h-14 flex items-center justify-center text-3xl cursor-pointer hover:opacity-80 transition-all ${bgColor} ${
-                animatingMove && animatingMove.to === coordsToSquare(row, col) ? 'animate-pulse' : ''
-              }`
-            },
-            piece !== ' ' && pieceSymbols[piece]
-          );
-        };
-      
-        const board = currentBoard || parseFEN(fen);
-        const material = getMaterialCount(board);
-
-        return React.createElement('div', { className: "max-w-7xl mx-auto p-4 bg-gray-50 min-h-screen" },
-          React.createElement('div', { className: "bg-white rounded-lg shadow-lg p-6" },
-            React.createElement('div', { className: "flex justify-between items-center mb-4" },
-              React.createElement('div', null,
-                React.createElement('h1', { className: "text-3xl font-bold text-gray-800" }, 'Advanced Chess Analyzer'),
-                React.createElement('p', { className: "text-gray-600" }, 'Complete learning system with AI analysis')
-              ),
-              React.createElement('div', { className: "flex gap-2" },
-                React.createElement('button', {
-                  onClick: () => setMode('analyze'),
-                  className: `px-4 py-2 rounded ${mode === 'analyze' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`
-                }, 'Analyze'),
-                React.createElement('button', {
-                  onClick: startQuizMode,
-                  className: `px-4 py-2 rounded ${mode === 'quiz' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`
-                }, 'Quiz'),
-                React.createElement('button', {
-                  onClick: () => setMode('history'),
-                  className: `px-4 py-2 rounded ${mode === 'history' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`
-                }, 'History')
-              )
-            ),
-            
-            mode === 'analyze' && React.createElement('div', { className: "grid md:grid-cols-2 gap-6" },
-              React.createElement('div', { className: "space-y-4" },
-                React.createElement('div', null,
-                  React.createElement('label', { className: "block text-sm font-medium mb-2" }, 'Lichess Puzzle URL (optional):'),
-                  React.createElement('div', { className: "flex gap-2" },
-                    React.createElement('input', {
-                      type: "text",
-                      value: lichessUrl,
-                      onChange: (e) => setLichessUrl(e.target.value),
-                      className: "flex-1 border rounded px-3 py-2 text-sm",
-                      placeholder: "https://lichess.org/training/..."
-                    }),
-                    React.createElement('button', {
-                      onClick: () => parseLichessUrl(lichessUrl),
-                      className: "bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700"
-                    }, 'Load')
-                  )
-                ),
-                React.createElement('div', null,
-                  React.createElement('label', { className: "block text-sm font-medium mb-2" }, 'Or paste FEN:'),
-                  React.createElement('textarea', {
-                    value: fen,
-                    onChange: (e) => setFen(e.target.value),
-                    className: "w-full border rounded px-3 py-2 font-mono text-xs h-16"
-                  })
-                ),
-                React.createElement('div', null,
-                  React.createElement('label', { className: "block text-sm font-medium mb-2" }, 'Your Move:'),
-                  React.createElement('input', {
-                    type: "text",
-                    value: userMove,
-                    onChange: (e) => setUserMove(e.target.value),
-                    className: "w-full border rounded px-3 py-2",
-                    placeholder: "e.g., Nf3 or e4"
-                  })
-                ),
-                React.createElement('div', null,
-                  React.createElement('label', { className: "block text-sm font-medium mb-2" }, 'Best Move:'),
-                  React.createElement('input', {
-                    type: "text",
-                    value: bestMove,
-                    onChange: (e) => setBestMove(e.target.value),
-                    className: "w-full border rounded px-3 py-2",
-                    placeholder: "e.g., Qh5 or dxe5"
-                  })
-                ),
-                React.createElement('button', {
-                  onClick: analyzeMove,
-                  disabled: analyzing,
-                  className: "w-full bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700 disabled:bg-gray-400"
-                }, analyzing ? 'Analyzing...' : 'Deep Analysis')
-              ),
-              React.createElement('div', { className: "flex flex-col items-center" },
-                React.createElement('div', { className: "mb-3 bg-gray-100 rounded p-2 w-full max-w-md" },
-                  React.createElement('div', { className: "flex justify-between text-sm font-medium" },
-                    React.createElement('span', null, `White: ${material.white}`),
-                    React.createElement('span', { className: material.advantage > 0 ? 'text-green-600' : material.advantage < 0 ? 'text-red-600' : 'text-gray-600' },
-                      (material.advantage > 0 ? '+' : '') + material.advantage
-                    ),
-                    React.createElement('span', null, `Black: ${material.black}`)
-                  )
-                ),
-                React.createElement('div', { className: "border-4 border-gray-800 inline-block" },
-                  board.map((row, rowIdx) =>
-                    React.createElement('div', { key: rowIdx, className: "flex" },
-                      row.map((piece, colIdx) => renderSquare(piece, rowIdx, colIdx))
-                    )
-                  )
-                ),
-                React.createElement('p', { className: "text-xs text-gray-500 mt-2" }, 'Click pieces to make moves')
-              )
-            ),
-            
-            mode === 'quiz' && React.createElement('div', { className: "grid md:grid-cols-2 gap-6" },
-              React.createElement('div', { className: "space-y-4" },
-                React.createElement('h2', { className: "text-2xl font-bold text-blue-800" }, '❓ Quiz Mode'),
-                React.createElement('p', null, 'Identify the main tactical pattern or threat in this position.'),
-                React.createElement('div', null,
-                  React.createElement('label', { className: "block text-sm font-medium mb-2" }, 'Your Answer:'),
-                  React.createElement('input', {
-                    type: "text",
-                    value: quizAnswer,
-                    onChange: (e) => setQuizAnswer(e.target.value),
-                    className: "w-full border rounded px-3 py-2",
-                    placeholder: "e.g., Fork on the King and Queen"
-                  })
-                ),
-                React.createElement('button', {
-                  onClick: checkQuizAnswer,
-                  disabled: analyzing,
-                  className: "w-full bg-green-600 text-white px-6 py-3 rounded hover:bg-green-700 disabled:bg-gray-400"
-                }, analyzing ? 'Checking...' : 'Check Answer'),
-                React.createElement('button', {
-                  onClick: () => setShowHint(true),
-                  className: "w-full bg-yellow-500 text-white px-6 py-3 rounded hover:bg-yellow-600"
-                }, 'Show Hint'),
-                showHint && React.createElement('div', { className: "p-3 bg-yellow-100 border border-yellow-300 rounded" },
-                  React.createElement('p', null, analysis ? analysis.hint : 'Analyze the position first to get a hint.')
-                )
-              ),
-              React.createElement('div', { className: "flex flex-col items-center" },
-                // Board display for Quiz Mode
-                React.createElement('div', { className: "border-4 border-gray-800 inline-block" },
-                  board.map((row, rowIdx) =>
-                    React.createElement('div', { key: rowIdx, className: "flex" },
-                      row.map((piece, colIdx) => renderSquare(piece, rowIdx, colIdx))
-                    )
-                  )
-                ),
-                React.createElement('p', { className: "text-xs text-gray-500 mt-2" }, 'Analyze the board to find the tactic')
-              )
-            ),
-            
-            mode === 'history' && React.createElement('div', null,
-              React.createElement('h2', { className: "text-2xl font-bold text-gray-800 mb-4" }, 'Mistake History and Patterns'),
-              mistakes.length > 0 ? (
-                React.createElement('div', { className: "grid md:grid-cols-2 gap-4" },
-                  React.createElement('div', { className: "bg-white p-4 rounded-lg shadow" },
-                    React.createElement('h3', { className: "text-xl font-semibold mb-2" }, 'Recent Mistakes'),
-                    React.createElement('ul', { className: "space-y-2" },
-                      mistakes.slice(0, 5).map((m, i) => (
-                        React.createElement('li', { key: i, className: "border-b pb-2" },
-                          React.createElement('p', null, `FEN: ${m.fen.split(' ')[0]}`),
-                          React.createElement('p', null, `Your Move: ${m.userMove} (${m.classification})`),
-                          React.createElement('p', null, `Pattern: ${m.pattern}`)
-                        )
-                      ))
-                    )
-                  ),
-                  React.createElement('div', { className: "bg-white p-4 rounded-lg shadow" },
-                    React.createElement('h3', { className: "text-xl font-semibold mb-2" }, 'Common Patterns'),
-                    React.createElement('ul', { className: "space-y-2" },
-                      Object.entries(patterns).sort(([, a], [, b]) => b - a).map(([pattern, count]) => (
-                        React.createElement('li', { key: pattern }, `${pattern} (Count: ${count})`)
-                      ))
-                    )
-                  )
-                )
-              ) : (
-                React.createElement('p', { className: "text-gray-500" }, 'No mistakes or patterns recorded yet. Start analyzing!')
-              )
-            ),
-
-            analysis && mode === 'analyze' && React.createElement('div', { className: "mt-6 space-y-4" },
-              React.createElement('div', { className: `border-2 rounded-lg p-4 ${getMoveClassColor(analysis.moveClassification)}` },
-                React.createElement('h2', { className: "text-xl font-bold capitalize mb-2" }, analysis.moveClassification),
-                React.createElement('p', null, analysis.explanation)
-              ),
-              React.createElement('div', { className: "grid md:grid-cols-2 gap-4" },
-                React.createElement('div', { className: "bg-red-50 border-2 border-red-200 rounded-lg p-4" },
-                  React.createElement('h3', { className: "text-lg font-bold text-red-900 mb-2" }, `❌ Your Move: ${userMove}`),
-                  React.createElement('p', { className: "text-gray-700 mb-2" }, analysis.userMoveConsequence),
-                  React.createElement('button', {
-                    onClick: () => speak(`After your move ${userMove}, ${analysis.userMoveConsequence}`),
-                    className: "w-full bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 mt-2"
-                  }, 'Explain Your Move')
-                ),
-                React.createElement('div', { className: "bg-green-50 border-2 border-green-200 rounded-lg p-4" },
-                  React.createElement('h3', { className: "text-lg font-bold text-green-900 mb-2" }, `✓ Best Move: ${bestMove}`),
-                  React.createElement('p', { className: "text-gray-700 mb-2" }, analysis.bestMoveReason),
-                  React.createElement('button', {
-                    onClick: () => speak(`The best move is ${bestMove}. ${analysis.bestMoveReason}`),
-                    className: "w-full bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 mt-2"
-                  }, 'Explain Best Move')
-                )
-              ),
-              React.createElement('div', { className: "bg-amber-50 border-2 border-amber-200 rounded-lg p-4" },
-                React.createElement('h3', { className: "text-lg font-bold text-amber-900 mb-2" }, '💡 Learning Advice'),
-                React.createElement('p', { className: "mb-3" }, analysis.advice),
-                React.createElement('div', { className: "flex gap-2" },
-                    React.createElement('button', {
-                      onClick: exportToPGN,
-                      className: "bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700"
-                    }, 'Export PGN'),
-                    React.createElement('button', {
-                        onClick: () => setShowHint(true),
-                        className: "bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600"
-                    }, 'Show Hint')
-                ),
-                showHint && React.createElement('div', { className: "mt-3 p-3 bg-yellow-100 border border-yellow-300 rounded" },
-                    React.createElement('p', null, analysis.hint)
-                )
-              )
-            )
-          )
-        );
+1. ${userMove || "?"} ${bestMove ? "{" + bestMove + " " + evaluation + "}" : ""}`;
+        const blob = new Blob([pgn], {type: "text/plain"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = "analysis.pgn"; a.click();
       };
-      
-      const root = ReactDOM.createRoot(document.getElementById('root'));
-      root.render(React.createElement(ChessMoveAnalyzer));
-    </script>
+
+      const board = getBoard();
+
+      return (
+        <div className="max-w-6xl mx-auto p-6">
+          <h1 className="text-5xl font-bold text-center mb-8 text-yellow-400">Stockfish Chess Analyzer</h1>
+
+          <div className="grid lg:grid-cols-2 gap-10">
+            {/* Board */}
+            <div className="flex flex-col items-center">
+              <div className="relative inline-block border-4 border-yellow-600 rounded">
+                <div className="grid grid-cols-8">
+                  {board.map((row, r) => row.map((piece, c) => {
+                    const sq = squareName(r, c);
+                    const isLight = (r + c) % 2 === 0;
+                    const isSelected = selectedSquare === sq;
+                    const arrowTo = arrows.find(a => a.to === sq);
+                    return (
+                      <div
+                        key={sq}
+                        onClick={() => handleSquareClick(r, c)}
+                        className={`square flex items-center justify-center text-6xl cursor-pointer transition-all
+                          ${isLight ? 'light' : 'dark'}
+                          ${isSelected ? 'highlight-from' : ''}
+                          ${arrowTo ? 'highlight-to' : ''}`}
+                      >
+                        {piece && pieceSymbol[piece]}
+                      </div>
+                    );
+                  }))}
+                </div>
+
+                {/* Arrows */}
+                <svg className="absolute inset-0 w-full h-full pointer-events-none">
+                  <defs>
+                    <marker id="arrowhead" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto">
+                      <path d="M0,0 V12 L18,6 Z" fill="#48bb78"/>
+                    </marker>
+                  </defs>
+                  {arrows.map((a, i) => {
+                    const f = nameToCoord(a.from);
+                    const t = nameToCoord(a.to);
+                    return (
+                      <line
+                        key={i}
+                        x1={f.c * 70 + 35} y1={f.r * 70 + 35}
+                        x2={t.c * 70 + 35} y2={t.r * 70 + 35}
+                        className="arrow"
+                      />
+                    );
+                  })}
+                </svg>
+              </div>
+
+              <div className="mt-6 text-3xl font-bold text-yellow-300">
+                Evaluation: <span className={evaluation > 0 ? "text-green-400" : "text-red-400"}>{evaluation}</span>
+                {thinking && " (thinking...)"}
+              </div>
+              {bestMove && <div className="mt-4 text-xl">Best move: <strong>{bestMove}</strong></div>}
+            </div>
+
+            {/* Controls */}
+            <div className="space-y-6">
+              <div className="bg-gray-800 p-6 rounded-lg">
+                <label className="block text-lg mb-2">FEN Position</label>
+                <textarea
+                  className="w-full bg-gray-900 p-3 rounded text-sm font-mono h-32"
+                  value={fen}
+                  onChange={e => setFen(e.target.value)}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  onClick={analyzePosition}
+                  disabled={thinking}
+                  className="bg-blue-600 hover:bg-blue-700 py-4 rounded text-xl font-bold disabled:opacity-50"
+                >
+                  {thinking ? "Analyzing..." : "Analyze Position"}
+                </button>
+                <button
+                  onClick={startQuiz}
+                  className="bg-purple-600 hover:bg-purple-700 py-4 rounded text-xl font-bold"
+                >
+                  Quiz Mode
+                </button>
+              </div>
+
+              {userMove && (
+                <div className="bg-green-900 p-4 rounded">
+                  <strong>Your move:</strong> {userMove}
+                </div>
+              )}
+
+              <button
+                onClick={exportPGN}
+                className="w-full bg-gray-700 hover:bg-gray-600 py-3 rounded"
+              >
+                Export as PGN
+              </button>
+
+              {/* Mistakes & Patterns */}
+              <div className="bg-gray-800 p-6 rounded-lg mt-8">
+                <h2 className="text-2xl font-bold mb-4">Your Mistakes</h2>
+                {mistakes.slice(-5).reverse().map((m,i) => (
+                  <div key={i} className="text-sm mb-2">{m.userMove} → {m.bestMove}</div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<ChessAnalyzer />);
+  </script>
 </body>
 </html>
