@@ -6,13 +6,15 @@
     <title>Advanced Chess Analyzer Pro</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://unpkg.com/chess.js@1.0.0-beta.6/chess.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
     
-    <!-- Chessboard.js v2 for arrow support -->
-    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboard-js@2.0.0-beta.6/dist/chessboard-js.min.css">
-    <script src="https://unpkg.com/@chrisoakman/chessboard-js@2.0.0-beta.6/dist/chessboard-js.min.js"></script>
+    <!-- Chess.js v0.10.3 - stable version with global Chess constructor -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    
+    <!-- Chessboard.js v1.0.0 - stable version -->
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css" integrity="sha384-q94+BZtLrkL1/ohfjR8c6L+A6qzNH9R2hBLwyoAfu3i/WCvQjzL2RQJ3uNHDISdU" crossorigin="anonymous">
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js" integrity="sha384-8Vi8VHwn3vjQ9eUHUxex3JSN/NFqUg3QbPyX8kWyb93+8AC/pPWTzj+nHtbC5bxD" crossorigin="anonymous"></script>
 
     <style>
         .board-container {
@@ -25,13 +27,6 @@
             position: fixed; inset: 0; background: white; z-index: 50;
             display: flex; justify-content: center; align-items: center;
             font-size: 1.5rem; font-weight: bold; color: #3b82f6;
-        }
-        .arrows {
-            position: absolute;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            pointer-events: none;
-            z-index: 10;
         }
         .variation-step {
             transition: all 0.3s ease;
@@ -62,14 +57,6 @@
         .timeline-dot.active {
             transform: scale(1.25);
             box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
-        }
-        .threat-highlight {
-            position: absolute;
-            width: 12.5%;
-            height: 12.5%;
-            background: rgba(239, 68, 68, 0.3);
-            pointer-events: none;
-            z-index: 5;
         }
     </style>
 </head>
@@ -153,7 +140,7 @@
         <!-- Right Column: Board -->
         <div class="flex flex-col items-center">
             <div class="w-full max-w-[500px]">
-                <div id="board-wrapper" class="board-container w-full" style="position: relative;">
+                <div class="board-container w-full">
                     <div id="myBoard" class="w-full"></div>
                 </div>
             </div>
@@ -287,7 +274,10 @@
 
         // === BOARD INITIALIZATION ===
         $(document).ready(function() {
-            lucide.createIcons();
+            // Initialize Lucide icons
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
 
             const config = {
                 draggable: true,
@@ -295,11 +285,10 @@
                 onDragStart: onDragStart,
                 onDrop: onDrop,
                 onSnapEnd: onSnapEnd,
-                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
-                showNotation: true
+                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
             };
             
-            board = Chessboard('myBoard', config);
+            board = ChessBoard('myBoard', config);
             addArrowsOverlay();
             $(window).resize(board.resize);
             
@@ -312,9 +301,9 @@
         });
 
         function addArrowsOverlay() {
-            if ($('.arrows').length === 0) {
-                $('#board-wrapper').append(`
-                    <svg class="arrows">
+            if ($('#myBoard .arrows').length === 0) {
+                $('#myBoard').css('position', 'relative').append(`
+                    <svg class="arrows" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10;">
                         <defs>
                             <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse">
                                 <path d="M0,0 L10,5 L0,10 z" fill="#22c55e" />
@@ -335,13 +324,14 @@
         }
 
         function drawArrow(from, to, color = 'green') {
-            const $from = $(`.square-${from}`);
-            const $to = $(`.square-${to}`);
+            const $board = $('#myBoard');
+            const $from = $board.find('.square-' + from);
+            const $to = $board.find('.square-' + to);
             
             if ($from.length && $to.length) {
+                const boardPos = $board.offset();
                 const fromPos = $from.offset();
                 const toPos = $to.offset();
-                const boardPos = $('#board-wrapper').offset();
                 const squareSize = $from.width();
                 
                 const x1 = fromPos.left - boardPos.left + squareSize / 2;
@@ -520,7 +510,9 @@
             // UI Loading
             const btn = $('#analyzeBtn');
             btn.html('<i data-lucide="loader" class="w-5 h-5 animate-spin"></i> Analyzing...').prop('disabled', true);
-            lucide.createIcons();
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
 
             try {
                 // Get best moves from original position
@@ -588,7 +580,9 @@
                     addMistake(userSan, bestMove, moveType, delta.toFixed(2));
                 }
 
-                lucide.createIcons();
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
 
                 // Draw arrow for best move
                 clearArrows();
@@ -612,7 +606,9 @@
                 console.error(error);
             } finally {
                 btn.html('<i data-lucide="target" class="w-5 h-5"></i> Deep Analysis').prop('disabled', false);
-                lucide.createIcons();
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
             }
         }
 
@@ -808,7 +804,9 @@
                 container.append('<div class="text-gray-500 text-sm">No immediate tactical threats</div>');
             }
 
-            lucide.createIcons();
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
         }
 
         function updateVariationSteps() {
@@ -992,7 +990,9 @@
                     }
                 }, 1500);
             }
-            lucide.createIcons();
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
         }
 
         // === MISTAKES TRACKING ===
