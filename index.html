@@ -83,7 +83,7 @@
         <div class="space-y-6">
             <div class="bg-white p-4 rounded-lg shadow-sm border-l-4 border-blue-500 flex justify-between items-center">
                 <span id="status" class="font-semibold text-lg">White to move</span>
-                <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Cloud Engine</span>
+                <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Lichess Cloud API</span>
             </div>
 
             <div class="bg-white p-6 rounded-xl shadow-md space-y-5">
@@ -458,35 +458,126 @@
             }
         }
 
-        // === CLOUD ANALYSIS ===
+        // === CLOUD ANALYSIS (Lichess Free API) ===
         async function cloudAnalyze(fen, multipv = 3) {
             try {
-                const res = await fetch('https://chess-api.com/v1', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ fen, multipv })
+                // Use Lichess cloud evaluation API (free, no auth required)
+                const res = await fetch(`https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(fen)}&multiPv=${multipv}`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
                 });
+                
+                if (!res.ok) {
+                    throw new Error('Lichess API error');
+                }
+                
                 const data = await res.json();
                 
-                return data.lines.map(line => {
-                    const moves = line.pv.split(' ');
+                // If no cloud eval available, return empty (position not in cloud database)
+                if (!data.pvs || data.pvs.length === 0) {
+                    return await fallbackLocalAnalysis(fen, multipv);
+                }
+                
+                return data.pvs.map(pv => {
+                    const moves = pv.moves.split(' ');
                     const temp = new Chess(fen);
                     const sanMoves = moves.map(uci => {
                         const move = temp.move(uci, { sloppy: true });
                         return move ? move.san : uci;
                     });
                     
+                    // Convert centipawn score to pawns
+                    const evalScore = pv.cp ? (pv.cp / 100).toFixed(2) : (pv.mate ? `M${pv.mate}` : '0.00');
+                    
                     return {
                         pv: sanMoves,
                         uci: moves,
-                        eval: line.score,
-                        comment: line.comment || ''
+                        eval: evalScore,
+                        comment: pv.cp ? `Evaluation: ${evalScore}` : `Mate in ${Math.abs(pv.mate)}`
                     };
                 });
             } catch (e) {
-                console.error('Cloud analysis error:', e);
+                console.error('Lichess cloud analysis error:', e);
+                // Fallback to basic analysis
+                return await fallbackLocalAnalysis(fen, multipv);
+            }
+        }
+
+        // === FALLBACK: Basic position evaluation ===
+        async function fallbackLocalAnalysis(fen, multipv = 3) {
+            // Simple material-based evaluation as fallback
+            const temp = new Chess(fen);
+            const legalMoves = temp.moves({ verbose: true });
+            
+            if (legalMoves.length === 0) {
                 return [];
             }
+            
+            // Get top moves based on simple heuristics
+            const evaluatedMoves = legalMoves.map(move => {
+                const testGame = new Chess(fen);
+                testGame.move(move.san);
+                
+                // Simple evaluation: material + position
+                let score = 0;
+                
+                // Favor captures
+                if (move.captured) {
+                    score += PIECE_VALUES[move.captured] * 10;
+                }
+                
+                // Favor checks
+                if (testGame.in_check()) {
+                    score += 5;
+                }
+                
+                // Favor center control
+                if (['e4', 'e5', 'd4', 'd5'].includes(move.to)) {
+                    score += 2;
+                }
+                
+                // Material count
+                const material = calculateMaterial(testGame.fen());
+                score += material.diff;
+                
+                return {
+                    move: move,
+                    score: score,
+                    fen: testGame.fen()
+                };
+            });
+            
+            // Sort by score
+            evaluatedMoves.sort((a, b) => b.score - a.score);
+            
+            // Return top variations
+            return evaluatedMoves.slice(0, multipv).map((item, index) => {
+                const testGame = new Chess(fen);
+                testGame.move(item.move.san);
+                
+                // Get a few follow-up moves
+                const continuation = [item.move.san];
+                const uciMoves = [item.move.from + item.move.to + (item.move.promotion || '')];
+                
+                for (let i = 0; i < 2; i++) {
+                    const nextMoves = testGame.moves({ verbose: true });
+                    if (nextMoves.length > 0) {
+                        const nextMove = nextMoves[0];
+                        continuation.push(nextMove.san);
+                        uciMoves.push(nextMove.from + nextMove.to + (nextMove.promotion || ''));
+                        testGame.move(nextMove.san);
+                    }
+                }
+                
+                return {
+                    pv: continuation,
+                    uci: uciMoves,
+                    eval: (item.score / 10).toFixed(2),
+                    comment: `Local analysis (line ${index + 1})`
+                };
+            });
         }
 
         // === DEEP ANALYSIS ===
@@ -519,7 +610,8 @@
                 bestVariations = await cloudAnalyze(originalFen, 3);
                 
                 if (bestVariations.length === 0) {
-                    throw new Error('Cloud analysis unavailable');
+                    alert('Unable to analyze this position. Try a different position or check your connection.');
+                    return;
                 }
 
                 const originalEval = bestVariations[0].eval;
@@ -530,8 +622,10 @@
                 yourVariations = await cloudAnalyze(testGame.fen(), 3);
                 const userEval = yourVariations[0]?.eval || 0;
                 
-                // Calculate evaluation change
-                const delta = Math.abs(originalEval - userEval);
+                // Calculate evaluation change (handle mate scores)
+                const originalEvalNum = typeof originalEval === 'string' && originalEval.startsWith('M') ? 10 : parseFloat(originalEval);
+                const userEvalNum = typeof userEval === 'string' && userEval.startsWith('M') ? 10 : parseFloat(userEval);
+                const delta = Math.abs(originalEvalNum - userEvalNum);
                 
                 // Classify move
                 let moveType, headerClass, iconType;
@@ -592,9 +686,10 @@
                 }
 
                 // Update eval display
-                $('#evalScore').text(originalEval.toFixed(1))
+                const evalText = typeof originalEval === 'string' && originalEval.startsWith('M') ? originalEval : parseFloat(originalEval).toFixed(1);
+                $('#evalScore').text(evalText)
                     .removeClass('text-green-600 text-red-600 text-slate-800')
-                    .addClass(originalEval > 0 ? 'text-green-600' : originalEval < 0 ? 'text-red-600' : 'text-slate-800');
+                    .addClass(originalEvalNum > 0 ? 'text-green-600' : originalEvalNum < 0 ? 'text-red-600' : 'text-slate-800');
 
                 // Setup deep analysis
                 if (delta >= 0.8) {
@@ -637,7 +732,8 @@
             select.empty();
             
             vars.forEach((v, i) => {
-                const label = `Line ${i + 1}: ${v.pv[0]} (eval: ${v.eval})`;
+                const evalDisplay = typeof v.eval === 'string' ? v.eval : parseFloat(v.eval).toFixed(2);
+                const label = `Line ${i + 1}: ${v.pv[0]} (eval: ${evalDisplay})`;
                 select.append(`<option value="${i}">${label}</option>`);
             });
             
