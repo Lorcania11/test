@@ -1,745 +1,320 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Westbrook Country Club Golf Shop Marketing Plan</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html-docx-js/0.3.1/html-docx.js"></script>
-    <style>
-        body {
-            font-family: 'Georgia', 'Times New Roman', serif;
-            line-height: 1.6;
-            color: #535353;
-            max-width: 8.5in;
-            margin: 0 auto;
-            padding: 40px;
-            background: white;
-        }
-        
-        .button-container {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 1000;
-        }
-        
-        .download-button {
-            background: #65667d;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            font-size: 16px;
-            cursor: pointer;
-            border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-        }
-        
-        .download-button:hover {
-            background: #373b58;
-        }
-        
-        .cover-page {
-            text-align: center;
-            padding: 120px 40px;
-            border: 3px solid #65667d;
-            margin: -40px -40px 40px -40px;
-            background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
-        }
-        
-        .club-name {
-            font-size: 48px;
-            font-weight: bold;
-            color: #65667d;
-            margin-bottom: 10px;
-            letter-spacing: 2px;
-        }
-        
-        .doc-title {
-            font-size: 36px;
-            color: #373b58;
-            margin: 30px 0 20px 0;
-            font-weight: normal;
-        }
-        
-        .doc-subtitle {
-            font-size: 20px;
-            color: #666;
-            margin-bottom: 60px;
-            font-style: italic;
-        }
-        
-        .doc-details {
-            font-size: 14px;
-            color: #535353;
-            margin-top: 100px;
-        }
-        
-        .doc-details p {
-            margin: 8px 0;
-        }
-        
-        h1 {
-            color: #65667d;
-            font-size: 32px;
-            border-bottom: 3px solid #373b58;
-            padding-bottom: 10px;
-            margin-top: 50px;
-        }
-        
-        h2 {
-            color: #373b58;
-            font-size: 24px;
-            margin-top: 35px;
-            border-left: 5px solid #65667d;
-            padding-left: 15px;
-        }
-        
-        h3 {
-            color: #373b58;
-            font-size: 18px;
-            margin-top: 25px;
-            font-weight: bold;
-        }
-        
-        h4 {
-            color: #535353;
-            font-size: 16px;
-            margin-top: 20px;
-            font-style: italic;
-        }
-        
-        p {
-            margin: 12px 0;
-            text-align: justify;
-        }
-        
-        ul, ol {
-            margin: 15px 0;
-            padding-left: 30px;
-        }
-        
-        li {
-            margin: 8px 0;
-        }
-        
-        .highlight-box {
-            background: #f5f5f7;
-            border-left: 4px solid #65667d;
-            padding: 20px;
-            margin: 25px 0;
-        }
-        
-        .emphasis {
-            color: #65667d;
-            font-weight: bold;
-        }
-        
-        .metric-box {
-            background: #ffffff;
-            border: 2px solid #65667d;
-            padding: 15px;
-            margin: 15px 0;
-            border-radius: 5px;
-        }
-        
-        .section-divider {
-            border-top: 2px solid #373b58;
-            margin: 40px 0 30px 0;
-        }
-        
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-        }
-        
-        th {
-            background: #65667d;
-            color: white;
-            padding: 12px;
-            text-align: left;
-            font-weight: bold;
-        }
-        
-        td {
-            padding: 10px 12px;
-            border-bottom: 1px solid #ddd;
-        }
-        
-        tr:nth-child(even) {
-            background: #f8f9fa;
-        }
-    </style>
-</head>
-<body>
-    <div class="button-container">
-        <button class="download-button" onclick="downloadAsWord()">📄 Download Word Document</button>
-    </div>
+import React, { useState } from 'react';
+import { Play, RotateCcw, Volume2, ChevronRight, AlertCircle } from 'lucide-react';
 
-    <div id="document-content">
-        <div class="cover-page">
-            <div class="club-name">WESTBROOK COUNTRY CLUB</div>
-            <div class="doc-title">Golf Shop Marketing Plan</div>
-            <div class="doc-subtitle">2026 Strategic Initiative</div>
-            
-            <div class="doc-details">
-                <p><strong>Prepared by:</strong> Golf Shop Management Team</p>
-                <p><strong>Date:</strong> December 11, 2025</p>
-                <p><strong>Location:</strong> 1098 Springmill Street, Mansfield, Ohio 44906</p>
+const ChessMoveAnalyzer = () => {
+  const [fen, setFen] = useState('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+  const [userMove, setUserMove] = useState('');
+  const [bestMove, setBestMove] = useState('');
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysis, setAnalysis] = useState(null);
+  const [playbackStep, setPlaybackStep] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentBoard, setCurrentBoard] = useState(null);
+
+  const parseFEN = (fen) => {
+    const board = Array(8).fill(null).map(() => Array(8).fill(' '));
+    const [position] = fen.split(' ');
+    const rows = position.split('/');
+    
+    rows.forEach((row, i) => {
+      let col = 0;
+      for (let char of row) {
+        if (isNaN(char)) {
+          board[i][col] = char;
+          col++;
+        } else {
+          col += parseInt(char);
+        }
+      }
+    });
+    
+    return board;
+  };
+
+  const pieceSymbols = {
+    'K': '♔', 'Q': '♕', 'R': '♖', 'B': '♗', 'N': '♘', 'P': '♙',
+    'k': '♚', 'q': '♛', 'r': '♜', 'b': '♝', 'n': '♞', 'p': '♟'
+  };
+
+  const analyzeMove = async () => {
+    if (!userMove || !bestMove) {
+      alert('Please enter both your move and the best move');
+      return;
+    }
+
+    setAnalyzing(true);
+    setPlaybackStep(0);
+    
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          messages: [{
+            role: 'user',
+            content: `You are a chess coach analyzing a student's move versus the best move.
+
+Position (FEN): ${fen}
+Student's move: ${userMove}
+Best move: ${bestMove}
+
+Please provide a detailed analysis in the following JSON format (respond ONLY with valid JSON, no markdown, no preamble):
+
+{
+  "moveClassification": "mistake|blunder|inaccuracy|good|excellent",
+  "explanation": "Brief explanation of why the student's move is problematic or good",
+  "userMoveConsequence": "What happens after the student's move - describe the resulting position and threats in 2-3 sentences",
+  "bestMoveReason": "Why the best move is superior - what it accomplishes tactically or strategically in 2-3 sentences",
+  "keyDifference": "The main tactical or strategic difference between the two moves in 1-2 sentences",
+  "userContinuation": "3-4 move sequence showing how the position evolves after user's move, in algebraic notation separated by spaces",
+  "bestContinuation": "3-4 move sequence showing how the position evolves after best move, in algebraic notation separated by spaces",
+  "advice": "Concrete advice for the student to improve, focusing on the pattern or principle they missed"
+}`
+          }]
+        })
+      });
+
+      const data = await response.json();
+      const text = data.content.find(c => c.type === 'text')?.text || '';
+      const cleanText = text.replace(/```json\n?|\n?```/g, '').trim();
+      const parsed = JSON.parse(cleanText);
+      
+      setAnalysis(parsed);
+      setCurrentBoard(parseFEN(fen));
+    } catch (error) {
+      console.error('Analysis error:', error);
+      alert('Error analyzing move. Please check your input and try again.');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const playSequence = (sequence, isUserMove) => {
+    setIsPlaying(true);
+    setPlaybackStep(0);
+    
+    const moves = sequence.split(' ').filter(m => m);
+    let step = 0;
+    
+    const interval = setInterval(() => {
+      if (step >= moves.length) {
+        clearInterval(interval);
+        setIsPlaying(false);
+        return;
+      }
+      
+      setPlaybackStep(step + 1);
+      step++;
+    }, 1500);
+  };
+
+  const speak = (text) => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.9;
+      utterance.pitch = 1;
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  const getMoveClassColor = (classification) => {
+    const colors = {
+      'blunder': 'bg-red-100 text-red-800 border-red-300',
+      'mistake': 'bg-orange-100 text-orange-800 border-orange-300',
+      'inaccuracy': 'bg-yellow-100 text-yellow-800 border-yellow-300',
+      'good': 'bg-green-100 text-green-800 border-green-300',
+      'excellent': 'bg-blue-100 text-blue-800 border-blue-300'
+    };
+    return colors[classification] || 'bg-gray-100 text-gray-800 border-gray-300';
+  };
+
+  const renderSquare = (piece, row, col) => {
+    const isLight = (row + col) % 2 === 0;
+    return (
+      <div
+        key={`${row}-${col}`}
+        className={`w-12 h-12 flex items-center justify-center text-3xl ${
+          isLight ? 'bg-amber-100' : 'bg-amber-700'
+        }`}
+      >
+        {piece !== ' ' && pieceSymbols[piece]}
+      </div>
+    );
+  };
+
+  const board = currentBoard || parseFEN(fen);
+
+  return (
+    <div className="max-w-6xl mx-auto p-6 bg-gray-50 min-h-screen">
+      <div className="bg-white rounded-lg shadow-lg p-6">
+        <h1 className="text-3xl font-bold mb-2 text-gray-800">Chess Move Analyzer</h1>
+        <p className="text-gray-600 mb-6">
+          Understand why your move wasn't the best with AI-powered explanations
+        </p>
+
+        <div className="grid md:grid-cols-2 gap-6">
+          <div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">Position (FEN):</label>
+              <textarea
+                value={fen}
+                onChange={(e) => setFen(e.target.value)}
+                className="w-full border rounded px-3 py-2 font-mono text-sm h-20"
+                placeholder="Paste FEN notation here"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Paste the FEN from your puzzle position
+              </p>
             </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">Your Move:</label>
+              <input
+                type="text"
+                value={userMove}
+                onChange={(e) => setUserMove(e.target.value)}
+                className="w-full border rounded px-3 py-2"
+                placeholder="e.g., Nf3"
+              />
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">Best Move (from puzzle):</label>
+              <input
+                type="text"
+                value={bestMove}
+                onChange={(e) => setBestMove(e.target.value)}
+                className="w-full border rounded px-3 py-2"
+                placeholder="e.g., Qh5"
+              />
+            </div>
+
+            <button
+              onClick={analyzeMove}
+              disabled={analyzing}
+              className="w-full bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700 disabled:bg-gray-400 flex items-center justify-center gap-2"
+            >
+              {analyzing ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                  Analyzing...
+                </>
+              ) : (
+                <>
+                  <Play size={20} />
+                  Analyze Moves
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="flex justify-center items-start">
+            <div className="border-4 border-gray-800 inline-block">
+              {board.map((row, rowIdx) => (
+                <div key={rowIdx} className="flex">
+                  {row.map((piece, colIdx) => renderSquare(piece, rowIdx, colIdx))}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
-        <h1>EXECUTIVE SUMMARY</h1>
-        
-        <p>This comprehensive marketing plan positions the Westbrook Country Club Golf Shop as a premier retail destination that reflects the club's commitment to "genuine hospitality and personalized service." Building on the legacy of our Donald Ross-designed championship course, the golf shop will serve as a daily touchpoint for members, offering curated merchandise, personalized experiences, and exclusive member benefits that reinforce Westbrook's position as the premier club in the Mansfield area.</p>
-
-        <div class="highlight-box">
-            <h3>Strategic Objectives</h3>
-            <ul>
-                <li>Increase foot traffic by <span class="emphasis">40%</span> through signature member events</li>
-                <li>Grow average transaction value by <span class="emphasis">25%</span> via personalization services</li>
-                <li>Establish the shop as an exclusive, boutique-style retail experience</li>
-                <li>Strengthen member engagement and loyalty through experiential marketing</li>
-                <li>Achieve <span class="emphasis">30% year-over-year revenue growth</span></li>
-            </ul>
-        </div>
-
-        <h1>MARKET ANALYSIS</h1>
-
-        <h2>Current Environment</h2>
-        <p>Westbrook Country Club distinguishes itself through:</p>
-        <ul>
-            <li>Championship Donald Ross-designed golf course</li>
-            <li>Warm, family-friendly atmosphere</li>
-            <li>Commitment to exceeding member expectations</li>
-            <li>Full-service amenities including dining and event facilities</li>
-            <li>Strong community presence in Mansfield, Ohio</li>
-        </ul>
-
-        <h2>Member Demographics & Psychographics</h2>
-        <ul>
-            <li>Affluent professionals and families</li>
-            <li>Value quality, exclusivity, and personalized service</li>
-            <li>Appreciate heritage and tradition (Donald Ross legacy)</li>
-            <li>Seek convenient, premium shopping experiences</li>
-            <li>Respond to limited-edition and members-only offerings</li>
-        </ul>
-
-        <h2>Competitive Positioning</h2>
-        <p>The golf shop will differentiate through:</p>
-        
-        <table>
-            <tr>
-                <th>Differentiator</th>
-                <th>Description</th>
-            </tr>
-            <tr>
-                <td><strong>Exclusivity</strong></td>
-                <td>Members-only access to curated collections</td>
-            </tr>
-            <tr>
-                <td><strong>Personalization</strong></td>
-                <td>In-house embroidery and custom services</td>
-            </tr>
-            <tr>
-                <td><strong>Experience</strong></td>
-                <td>Boutique atmosphere vs. transactional retail</td>
-            </tr>
-            <tr>
-                <td><strong>Expertise</strong></td>
-                <td>Staff as trusted advisors, not salespeople</td>
-            </tr>
-            <tr>
-                <td><strong>Convenience</strong></td>
-                <td>One-stop shopping for premium golf lifestyle needs</td>
-            </tr>
-        </table>
-
-        <h1>BRAND POSITIONING</h1>
-
-        <h2>Vision Statement</h2>
-        <div class="highlight-box">
-            <p><em>The Westbrook Golf Shop serves as the style center and daily member touchpoint, offering a curated, elevated boutique experience with premium apparel, personalized service, and exclusive products that reflect the club's commitment to genuine hospitality.</em></p>
-        </div>
-
-        <h2>Core Brand Attributes</h2>
-        <ul>
-            <li><strong>Premium Quality:</strong> High-end curation across all categories</li>
-            <li><strong>Personal Touch:</strong> Customization and individualized service</li>
-            <li><strong>Exclusive Access:</strong> Members-only products and experiences</li>
-            <li><strong>Expert Guidance:</strong> Knowledgeable staff providing trusted advice</li>
-            <li><strong>Welcoming Atmosphere:</strong> Family-friendly yet sophisticated</li>
-        </ul>
-
-        <h2>Key Differentiators</h2>
-        <ol>
-            <li><strong>In-House Embroidery Machine:</strong> Immediate personalization capabilities</li>
-            <li><strong>Boutique Curation:</strong> Carefully selected merchandise, not mass retail</li>
-            <li><strong>Special Order Service:</strong> Custom orders to meet individual member needs</li>
-            <li><strong>Equipment Demo Program:</strong> Try-before-you-buy experience</li>
-            <li><strong>Lifestyle Expansion:</strong> Beyond golf to beach, leisure, and accessories</li>
-        </ol>
-
-        <h1>STRATEGIC INITIATIVES</h1>
-
-        <h2>1. Member Engagement Programs</h2>
-
-        <h3>A. Signature Event Calendar</h3>
-
-        <h4>Demo Days (Monthly)</h4>
-        <ul>
-            <li>Partner with major equipment manufacturers (Titleist, Callaway, TaylorMade, Ping)</li>
-            <li>Full club fittings with launch monitor technology</li>
-            <li>Professional staff guidance on equipment selection</li>
-            <li>Special event pricing and trade-in programs</li>
-            <li>Light refreshments and social atmosphere</li>
-            <li><em>Target: 25-30 members per event</em></li>
-        </ul>
-
-        <h4>Seasonal Apparel Reveal Nights (Quarterly)</h4>
-        <ul>
-            <li>Boutique-style showcasing of new seasonal collections</li>
-            <li>Fashion show featuring member models</li>
-            <li>Trunk shows with premium brand representatives</li>
-            <li>Complimentary beverages and hors d'oeuvres</li>
-            <li>Early access purchasing with exclusive event discounts</li>
-            <li><em>Target: 40-50 members per event</em></li>
-        </ul>
-
-        <h4>Personalization Week (Bi-Annual: Spring & Fall)</h4>
-        <ul>
-            <li>Live embroidery demonstrations</li>
-            <li>20% discount on all personalization services</li>
-            <li>Special monogram designs exclusive to the week</li>
-            <li>Purchase incentives (buy 3 items, get 1 personalized free)</li>
-            <li>Member-designed logo contest for club merchandise</li>
-            <li><em>Target: 60+ member interactions</em></li>
-        </ul>
-
-        <h4>Feature Fridays (Weekly)</h4>
-        <ul>
-            <li>Rotating weekly merchandise highlights</li>
-            <li>Themed displays (e.g., "Pro's Pick," "Travel Essentials," "Gift Ideas")</li>
-            <li>Complimentary coffee and pastries</li>
-            <li>15% discount on featured items</li>
-            <li>Email preview sent Thursday evening</li>
-            <li><em>Target: Consistent 15-20 member visits</em></li>
-        </ul>
-
-        <h4>Meet the Pro Days (Quarterly for New Members)</h4>
-        <ul>
-            <li>Personal introduction to golf shop and services</li>
-            <li>Complimentary club cleaning and inspection</li>
-            <li>Overview of personalization options</li>
-            <li>Tour of demo equipment</li>
-            <li>Welcome gift (logo ball marker or towel)</li>
-            <li><em>Target: 100% new member participation</em></li>
-        </ul>
-
-        <h4>Holiday Promotions (Seasonal)</h4>
-        <ul>
-            <li>Father's Day Gift Event</li>
-            <li>Holiday Gift Showcase (November/December)</li>
-            <li>Mother's Day Accessories Event</li>
-            <li>Valentine's Day Couples Clinic (with shop gift certificates)</li>
-            <li>Spring Break Travel Gear Event</li>
-            <li><em>Target: 30-40% of membership participation per event</em></li>
-        </ul>
-
-        <h4>Vendor Trunk Shows (Monthly)</h4>
-        <ul>
-            <li>Partner with premium brands (Peter Millar, FootJoy, Polo Golf, Lululemon Golf)</li>
-            <li>Brand representatives on-site</li>
-            <li>Exclusive trunk show pricing (15-20% off)</li>
-            <li>Preview upcoming collections not yet in regular stock</li>
-            <li>Limited-edition Westbrook collaboration items</li>
-            <li><em>Target: 20-25 members per event</em></li>
-        </ul>
-
-        <h4>Par 3 Promotion (Spring/Summer Weekly)</h4>
-        <ul>
-            <li>Wednesday afternoon promotion tied to on-course play</li>
-            <li>Receipt from par 3 performance earns shop discount (par = 10%, birdie = 20%)</li>
-            <li>Drives traffic during mid-week slower periods</li>
-            <li>Creates fun, competitive member engagement</li>
-            <li>Promotes both golf and shop simultaneously</li>
-            <li><em>Target: 10-15 redemptions weekly</em></li>
-        </ul>
-
-        <h3>B. Loyalty & Incentive Programs</h3>
-
-        <h4>Exclusive Membership Benefits</h4>
-        <div class="metric-box">
-            <ul>
-                <li>Eliminate external "green grass" pricing discrepancy</li>
-                <li>Standard member pricing: <strong>20% off</strong> all merchandise and equipment</li>
-                <li>VIP tier (annual spend >$2,500): <strong>25% off</strong> + priority special orders</li>
-                <li>Birthday month: Additional <strong>10% off</strong> entire purchase</li>
-                <li>Referral rewards: <strong>$50 shop credit</strong> for new member referrals</li>
-            </ul>
-            <p><em>Goal: Reinforce exclusivity and member value</em></p>
-        </div>
-
-        <h4>Incentive Programs</h4>
-        <ul>
-            <li>Punch card: 10 purchases = $100 shop credit</li>
-            <li>Seasonal spend milestones with reward tiers:
-                <ul>
-                    <li>Spring: Spend $500, receive $75 credit</li>
-                    <li>Summer: Spend $750, receive $125 credit</li>
-                    <li>Fall: Spend $500, receive $75 credit</li>
-                </ul>
-            </li>
-            <li>End-of-season clearance: Additional 30-40% off sale items</li>
-        </ul>
-
-        <h2>2. Digital Marketing Strategy</h2>
-
-        <h3>A. Email Marketing</h3>
-
-        <h4>Curated Lookbook Approach</h4>
-        <ul>
-            <li>Monthly "Style Guide" emails featuring seasonal collections</li>
-            <li>Professional photography of merchandise styled together</li>
-            <li>Member testimonials and product reviews</li>
-            <li>New arrival announcements with limited quantities noted</li>
-            <li>Behind-the-scenes content (vendor partnerships, buying trips)</li>
-            <li><em>Frequency: 2-3 emails per month, selective timing</em></li>
-        </ul>
-
-        <h4>Personalized Communications</h4>
-        <ul>
-            <li>Birthday emails with special offers</li>
-            <li>Purchase anniversary reminders (e.g., "Time for new golf shoes?")</li>
-            <li>Abandoned fitting follow-ups</li>
-            <li>Special order arrival notifications</li>
-            <li>VIP early access announcements</li>
-        </ul>
-
-        <h3>B. Push Notifications (Selective Use)</h3>
-        <p>High-Impact Triggers Only:</p>
-        <ul>
-            <li>Limited-edition product drops</li>
-            <li>Flash sales (4-hour windows)</li>
-            <li>Trunk show start times</li>
-            <li>Equipment demos (same-day openings)</li>
-            <li>Personalization Week reminders</li>
-            <li><em>Maximum: 2 notifications per week to avoid fatigue</em></li>
-        </ul>
-
-        <h3>C. Visual Content Strategy</h3>
-
-        <h4>Professional Photography & Videography</h4>
-        <ul>
-            <li>All events professionally documented</li>
-            <li>Member spotlights (with permission)</li>
-            <li>Product feature videos</li>
-            <li>Staff expertise videos (club fitting tips, style advice)</li>
-            <li>Behind-the-scenes personalization process</li>
-            <li>Season recap videos</li>
-        </ul>
-
-        <h4>Member of the Month Showcase</h4>
-        <ul>
-            <li>Feature wall in shop with professional photo</li>
-            <li>Spotlight their style choices and favorite products</li>
-            <li>Interview about their Westbrook experience</li>
-            <li>Featured in monthly email newsletter</li>
-            <li>Complimentary item of their choice</li>
-            <li><em>Goal: Create aspirational connection and community</em></li>
-        </ul>
-
-        <h3>D. Club Website Integration</h3>
-        <p>Dedicated Golf Shop Page featuring:</p>
-        <ul>
-            <li>Current featured products with photography</li>
-            <li>Event calendar with registration links</li>
-            <li>New arrival notifications</li>
-            <li>Staff introductions and expertise</li>
-            <li>Testimonials and member photos</li>
-            <li>Link to special order request form</li>
-            <li><em>Update frequency: Weekly</em></li>
-        </ul>
-
-        <h2>3. In-Shop Experience Excellence</h2>
-
-        <h3>A. Atmosphere & Environment</h3>
-
-        <h4>Sensory Excellence</h4>
-        <ul>
-            <li>Light, welcoming signature scent (subtle, not overpowering)</li>
-            <li>Curated background music (upscale, contemporary)</li>
-            <li>Premium lighting that highlights merchandise</li>
-            <li>Fresh flowers or greenery near entrance</li>
-            <li>Immaculately organized displays</li>
-            <li>Leather seating area for consultations</li>
-            <li>Complimentary beverages (coffee, water, seasonal drinks)</li>
-            <li><em>Benchmark: Luxury boutique, not sporting goods store</em></li>
-        </ul>
-
-        <h4>Visual Merchandising Standards</h4>
-        <ul>
-            <li>Mannequin refreshes bi-weekly with complete outfits</li>
-            <li>Quarterly color story coordination</li>
-            <li>Cross-merchandising (outfit accessories together)</li>
-            <li>Clear sight lines throughout shop</li>
-            <li>Minimal clutter, maximum visual impact</li>
-            <li>Seasonal window displays</li>
-            <li>Golf course photography integrated into decor</li>
-            <li><em>Goal: Instagram-worthy environment</em></li>
-        </ul>
-
-        <h3>B. Staff Excellence Program</h3>
-
-        <h4>Training & Development</h4>
-        <ul>
-            <li>Product knowledge certification for all staff</li>
-            <li>Seasonal brand training sessions with vendor reps</li>
-            <li>Customer service excellence workshops</li>
-            <li>Equipment fitting certification (for applicable staff)</li>
-            <li>Style consultation techniques</li>
-            <li>Personalized service standards</li>
-            <li>Conflict resolution and problem-solving</li>
-            <li><em>Quarterly training sessions mandatory</em></li>
-        </ul>
-
-        <h4>Service Standards</h4>
-        <div class="metric-box">
-            <ul>
-                <li>Greet every member within 10 seconds of entry</li>
-                <li>Learn member names and preferences</li>
-                <li>Proactive assistance without hovering</li>
-                <li>Honest opinions and advice, not just sales</li>
-                <li>Follow-up on special orders within 24 hours</li>
-                <li>Handwritten thank-you notes for purchases >$500</li>
-                <li>Personal outreach for club fittings booked</li>
-            </ul>
-            <p><strong>Standard: Exceed expectations on every interaction</strong></p>
-        </div>
-
-        <h4>Staff as Experts & Stylists</h4>
-        <ul>
-            <li>Position staff as trusted advisors</li>
-            <li>Encourage outfit building, not individual item sales</li>
-            <li>Equipment expertise through ongoing education</li>
-            <li>Personalization consultation skills</li>
-            <li>Understanding of member preferences and past purchases</li>
-            <li>Authority to make member-satisfaction decisions</li>
-        </ul>
-
-        <h3>C. Dedicated Spaces</h3>
-
-        <h4>Club Fitting & Demo Area</h4>
-        <ul>
-            <li>Launch monitor setup</li>
-            <li>Swing analysis capability</li>
-            <li>Organized demo equipment library</li>
-            <li>Comfortable seating for consultations</li>
-            <li>Privacy for personalized fittings</li>
-            <li>Appointment scheduling system</li>
-        </ul>
-
-        <h4>Personalization Station</h4>
-        <ul>
-            <li>Visible embroidery machine with viewing window</li>
-            <li>Sample monogram styles on display</li>
-            <li>Design consultation area</li>
-            <li>Quick-turnaround communication (most items same-day)</li>
-            <li>Portfolio of custom work examples</li>
-            <li><em>Feature: Signature Westbrook differentiator</em></li>
-        </ul>
-
-        <h4>Try-On & Styling Area</h4>
-        <ul>
-            <li>Well-lit, private changing area</li>
-            <li>Full-length mirrors</li>
-            <li>Seating for companions</li>
-            <li>Style suggestion cards</li>
-            <li>Complementary accessory displays nearby</li>
-        </ul>
-
-        <h2>4. Merchandise Strategy</h2>
-
-        <h3>A. Apparel Curation</h3>
-
-        <h4>Premium Brand Portfolio</h4>
-        <ul>
-            <li>Peter Millar (signature brand)</li>
-            <li>FootJoy (performance & lifestyle)</li>
-            <li>Polo Golf (classic American style)</li>
-            <li>TravisMathew (modern, casual)</li>
-            <li>Lululemon Golf (technical performance)</li>
-            <li>Johnnie-O (coastal luxury)</li>
-            <li>Brand partnerships with exclusive colorways</li>
-            <li><em>Philosophy: Curated selection, not mass variety</em></li>
-        </ul>
-
-        <h4>Seasonal Planning</h4>
-        <ul>
-            <li>Quarterly buying trips to markets</li>
-            <li>120-day merchandise planning calendar</li>
-            <li>New arrivals every 2-3 weeks</li>
-            <li>Limited quantities to create urgency</li>
-            <li>Coordinated color stories per season</li>
-            <li>Breadth over depth (sizes, not redundancy)</li>
-            <li><em>Goal: Fresh, boutique feel with always-new discoveries</em></li>
-        </ul>
-
-        <h4>Exclusive Westbrook Collection</h4>
-        <ul>
-            <li>Custom logo apparel designs (not generic logoed items)</li>
-            <li>Collaboration pieces with select vendors</li>
-            <li>Limited-edition seasonal releases</li>
-            <li>Heritage collection honoring Donald Ross legacy</li>
-            <li>Members-only access</li>
-            <li>Numbered or dated exclusive items</li>
-            <li><em>Strategy: Create collector mentality</em></li>
-        </ul>
-
-        <h3>B. Equipment & Technology</h3>
-
-        <h4>Fitting & Customization</h4>
-        <ul>
-            <li>Full custom club building capabilities</li>
-            <li>Certified fitting staff</li>
-            <li>Launch monitor analysis</li>
-            <li>Shaft optimization</li>
-            <li>Grip customization</li>
-            <li>Logo stamping available</li>
-            <li><em>Positioning: Performance optimization, not just sales</em></li>
-        </ul>
-
-        <h4>Demo Program Excellence</h4>
-        <ul>
-            <li>Current year models from all major manufacturers</li>
-            <li>Organized checkout system</li>
-            <li>On-course trial program (weekly demos)</li>
-            <li>Trade-in and upgrade program</li>
-            <li>Staff notifications of new demo arrivals</li>
-            <li>Member feedback collection</li>
-        </ul>
-
-        <h3>C. Lifestyle & Accessories Expansion</h3>
-
-        <h4>Beyond the Course</h4>
-        <ul>
-            <li>Beach towels and resort wear</li>
-            <li>Leather goods and handbags</li>
-            <li>Quality jewelry (golf-themed and general)</li>
-            <li>Sunglasses (premium brands)</li>
-            <li>Travel accessories</li>
-            <li>Home entertaining items</li>
-            <li>Bar accessories and barware</li>
-            <li><em>Strategy: Golf lifestyle, not just golf equipment</em></li>
-        </ul>
-
-        <h4>Gift & Impulse Items</h4>
-        <ul>
-            <li>Curated gift sets</li>
-            <li>Premium ball markers and divot tools</li>
-            <li>Luxury golf balls</li>
-            <li>Cocktail napkins and entertaining</li>
-            <li>Candles with club scent</li>
-            <li>Books (golf history, Donald Ross, course architecture)</li>
-        </ul>
-
-        <h2>5. Personalization as Signature Service</h2>
-
-        <h3>A. Capabilities</h3>
-
-        <h4>In-House Embroidery</h4>
-        <ul>
-            <li>Same-day turnaround for most items</li>
-            <li>Custom monograms and logos</li>
-            <li>Multiple thread colors and styles</li>
-            <li>Font selection library</li>
-            <li>Placement consultation</li>
-            <li>Quality guarantee</li>
-        </ul>
-
-        <div class="metric-box">
-            <h4>Embroidery Service Menu</h4>
-            <ul>
-                <li>Three-letter monogram: $15</li>
-                <li>Full name: $20</li>
-                <li>Club logo: $12</li>
-                <li>Custom design: $25-40</li>
-                <li>Bulk order discounts</li>
-            </ul>
-        </div>
-
-        <h4>Available On</h4>
-        <ul>
-            <li>All apparel (shirts, outerwear, headwear)</li>
-            <li>Golf bags and accessories</li>
-            <li>Towels and linens</li>
-            <li>Leather goods</li>
-            <li>Travel items</li>
-        </ul>
-
-        <h3>B. Promotional Integration</h3>
-
-        <h4>Personalization Week Specials</h4>
-        <ul>
-            <li>20% off all embroidery services</li>
-            <li>Buy 3, personalize 1 free</li>
-            <li>Custom logo design contest</li>
-            <li>Member monogram style feature</li>
-            <li>Demonstrations throughout the day</li>
-            <li><em>Timing: Spring (April) and Fall (September)</em></li>
-        </ul>
-
-        <h2>6. Special Services</h2>
-
-        <h3>A. Custom Ordering</h3>
-
-        <h4>Process Excellence</h4>
-        <ul>
-            <li>Member request forms (digital and in-shop)</li>
-            <li>24-hour quote response time</li>
-            <li>Direct vendor relationships</li>
-            <li>No order minimum</li>
-            <li>Status updates throughout process</li>
-            <li>Personal delivery notification</li>
-        </ul>
-
-        <h3>B. Concierge Services</h3>
-
-        <h4>Equipment Care</h4>
-        <ul>
-            <li>Complimentary club cleaning (while you dine)</li>
-            <li>Grip replacement while you wait</li>
-            <li>Club storage service</li>
-            <li>Shoe cleaning and conditioning</li>
-            <li>Bag tag installation</li>
-        </ul>
-
-        <h4>Travel Support</h4>
-        <ul>
-            <li>Travel bag rental program</li>
-            <li>Pre-trip equipment check</li>
-            <li>Travel packing consultation</li>
-            <li>Destination golf shop recommendations</li>
-            <li>Equipment shipping coordination</li>
-        </ul>
-
-        <h1>IMPLEMENTATION TIMELINE</h1>
-
-        <h2>MONTH 1: The Reveal (January 2026)</h2>
-
-        <h3>Week 1-2: Foundation</h3>
-        <ul>
-            <li>Staff training intensive</li>
-            <li>Visual merchandising reset</li>
-            <li>Embroidery machine showcasing</li>
-            <li>Digital marketing campaign launch</li>
-            <li>Member communications preview</li>
-        </ul>
-
-        <h3>Week 3: Grand Re-Launch</h3>
-        <ul>
-            <li>Winter/Spring Apparel Reveal Night</li>
-            <li>Personalization Week kickoff</li>
-            <li>Feature Friday launch</li>
-            <li>New member welcome program</li>
-        </ul
+        {analysis && (
+          <div className="mt-8 space-y-6">
+            <div className={`border-2 rounded-lg p-4 ${getMoveClassColor(analysis.moveClassification)}`}>
+              <div className="flex items-center gap-2 mb-2">
+                <AlertCircle size={24} />
+                <h2 className="text-xl font-bold capitalize">
+                  {analysis.moveClassification}
+                </h2>
+              </div>
+              <p className="text-lg">{analysis.explanation}</p>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4">
+                <h3 className="text-lg font-bold text-red-900 mb-2 flex items-center gap-2">
+                  <span className="text-2xl">❌</span> Your Move: {userMove}
+                </h3>
+                <p className="text-gray-700 mb-3">{analysis.userMoveConsequence}</p>
+                
+                <div className="bg-white rounded p-3 mb-2">
+                  <p className="text-sm font-mono text-gray-600">
+                    Continuation: {analysis.userContinuation}
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => {
+                    playSequence(analysis.userContinuation, true);
+                    speak(`After your move ${userMove}, ${analysis.userMoveConsequence}`);
+                  }}
+                  disabled={isPlaying}
+                  className="w-full bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 disabled:bg-gray-400 flex items-center justify-center gap-2"
+                >
+                  <Play size={16} />
+                  Show Your Line
+                </button>
+              </div>
+
+              <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
+                <h3 className="text-lg font-bold text-green-900 mb-2 flex items-center gap-2">
+                  <span className="text-2xl">✓</span> Best Move: {bestMove}
+                </h3>
+                <p className="text-gray-700 mb-3">{analysis.bestMoveReason}</p>
+                
+                <div className="bg-white rounded p-3 mb-2">
+                  <p className="text-sm font-mono text-gray-600">
+                    Continuation: {analysis.bestContinuation}
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => {
+                    playSequence(analysis.bestContinuation, false);
+                    speak(`After the best move ${bestMove}, ${analysis.bestMoveReason}`);
+                  }}
+                  disabled={isPlaying}
+                  className="w-full bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:bg-gray-400 flex items-center justify-center gap-2"
+                >
+                  <Play size={16} />
+                  Show Best Line
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+              <h3 className="text-lg font-bold text-blue-900 mb-2 flex items-center gap-2">
+                <ChevronRight size={20} />
+                Key Difference
+              </h3>
+              <p className="text-gray-700 mb-3">{analysis.keyDifference}</p>
+            </div>
+
+            <div className="bg-purple-50 border-2 border-purple-200 rounded-lg p-4">
+              <h3 className="text-lg font-bold text-purple-900 mb-2 flex items-center gap-2">
+                💡 Advice
+              </h3>
+              <p className="text-gray-700">{analysis.advice}</p>
+              
+              <button
+                onClick={() => speak(analysis.advice)}
+                className="mt-3 bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 flex items-center gap-2"
+              >
+                <Volume2 size={16} />
+                Read Advice Aloud
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default ChessMoveAnalyzer;
