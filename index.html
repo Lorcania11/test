@@ -1,349 +1,394 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Advanced Chess Analyzer Pro</title>
-    
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <script src="https://unpkg.com/lucide@latest"></script>
-    
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-    
-    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css" integrity="sha384-q94+BZtLrkL1/ohfjR8c6L+A6qzNH9R2hBLwyoAfu3i/WCvQjzL2RQJ3uNHDISdU" crossorigin="anonymous">
-    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js" integrity="sha384-8Vi8VHwn3vjQ9eUHUxex3JSN/NFqUg3QbPyX8kWyb93+8AC/pPWTzj+nHtbC5bxD" crossorigin="anonymous"></script>
-
-    <style>
-        .board-container {
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-            border: 8px solid #374151;
-            border-radius: 4px;
-        }
-        /* Loading Spinner */
-        #loading {
-            position: fixed; inset: 0; background: white; z-index: 50;
-            display: flex; justify-content: center; align-items: center;
-            font-size: 1.5rem; font-weight: bold; color: #3b82f6;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stockfish Chess Analyzer with Lichess & Chessboard.js</title>
+  <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/stockfish@16/src/stockfish.js"></script>
+  <script src="https://unpkg.com/chess.js@1.0.0-beta.6/chess.min.js"></script>
+  <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    #board { width: 500px; margin: 20px auto; }
+    .square-light { background-color: #f0d9b5; }
+    .square-dark { background-color: #b58863; }
+  </style>
 </head>
-<body class="bg-stone-100 text-slate-800 font-sans">
+<body class="bg-gray-900 text-white min-h-screen p-4">
+  <div class="max-w-6xl mx-auto">
+    <h1 class="text-5xl font-bold text-center mb-8 text-yellow-400">MasterChess Analyzer</h1>
 
-    <div id="loading">Loading Chess Analyzer...</div>
-
-    <nav class="bg-slate-900 text-white p-4 shadow-lg">
-        <div class="max-w-6xl mx-auto flex justify-between items-center">
-            <div class="flex items-center gap-2">
-                <i data-lucide="book-open" class="w-6 h-6 text-blue-400"></i>
-                <h1 class="text-xl font-bold tracking-tight">MasterChess Analyzer</h1>
-            </div>
-            <div class="flex space-x-2">
-                <button onclick="setMode('analyze')" id="btn-analyze" class="px-4 py-1.5 rounded-full text-sm font-medium transition bg-blue-600">Analyze</button>
-                <button onclick="setMode('quiz')" id="btn-quiz" class="px-4 py-1.5 rounded-full text-sm font-medium transition hover:bg-slate-800">Quiz Mode</button>
-            </div>
+    <div class="grid lg:grid-cols-2 gap-10 mb-8">
+      <!-- Board -->
+      <div class="flex flex-col items-center">
+        <div id="board"></div>
+        <div class="mt-4 text-center space-y-2">
+          <div class="text-2xl font-bold">
+            Eval: <span id="eval" class="text-green-400">0.0</span>
+          </div>
+          <div id="best-move" class="text-xl"></div>
+          <button id="flip-btn" class="bg-blue-600 px-4 py-2 rounded hover:bg-blue-700">Flip Orientation</button>
         </div>
-    </nav>
+      </div>
 
-    <div class="max-w-6xl mx-auto p-4 md:p-8 grid lg:grid-cols-2 gap-8">
-        
-        <div class="space-y-6">
-            <div class="bg-white p-4 rounded-lg shadow-sm border-l-4 border-blue-500 flex justify-between items-center">
-                <span id="status" class="font-semibold text-lg">White to move</span>
-                <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Stockfish 16 (Sim)</span>
-            </div>
-
-            <div class="bg-white p-6 rounded-xl shadow-md space-y-5">
-                <div>
-                    <label class="block text-xs font-bold uppercase text-gray-500 mb-1">Current FEN</label>
-                    <input id="fenInput" type="text" class="w-full font-mono text-sm border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none" value="start">
-                    <button onclick="resetGame()" class="mt-2 text-xs text-blue-600 hover:underline">Reset Board</button>
-                </div>
-
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-bold mb-1">Your Move</label>
-                        <input id="userMove" type="text" class="w-full border-2 border-slate-200 rounded-lg p-3 text-lg font-bold focus:border-blue-500 outline-none" placeholder="e4">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-bold mb-1 text-green-700">Best Move</label>
-                        <input id="bestMove" type="text" class="w-full border-2 border-green-100 bg-green-50 rounded-lg p-3 text-lg font-bold focus:border-green-500 outline-none" placeholder="e.g. Nf3">
-                    </div>
-                </div>
-
-                <button onclick="analyzeMove()" id="analyzeBtn" class="w-full bg-slate-900 text-white py-3 rounded-lg font-bold text-lg hover:bg-slate-800 transition shadow-lg flex justify-center items-center gap-2">
-                    <i data-lucide="target" class="w-5 h-5"></i> Deep Analysis
-                </button>
-            </div>
-
-            <div id="analysisResult" class="hidden bg-white rounded-xl shadow-md overflow-hidden animate-in fade-in slide-in-from-bottom-4">
-                <div id="analysisHeader" class="p-4 flex items-center gap-3">
-                    <i id="analysisIcon" data-lucide="check-circle" class="w-6 h-6"></i>
-                    <h3 id="analysisTitle" class="text-xl font-bold">Excellent</h3>
-                </div>
-                <div class="p-5 space-y-3">
-                    <p id="analysisText" class="text-gray-700 leading-relaxed">...</p>
-                    <div class="bg-blue-50 p-3 rounded text-sm text-blue-900 flex gap-2">
-                        <i data-lucide="lightbulb" class="w-4 h-4 mt-0.5 flex-shrink-0"></i>
-                        <span id="analysisAdvice">...</span>
-                    </div>
-                </div>
-            </div>
-
-             <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                 <h4 class="font-bold text-sm text-slate-700 mb-2 flex items-center gap-2"><i data-lucide="download" class="w-4 h-4"></i> Load Game (PGN)</h4>
-                 <textarea id="pgnInput" class="w-full text-xs font-mono border p-2 rounded h-20" placeholder='[Event "World Champ"] 1. e4 e5 ...'></textarea>
-                 <button onclick="loadPGN()" class="mt-2 bg-slate-200 hover:bg-slate-300 px-3 py-1 rounded text-xs font-bold text-slate-700">Load PGN</button>
-             </div>
+      <!-- Controls -->
+      <div class="space-y-6">
+        <!-- Lichess Puzzle Loader -->
+        <div class="bg-gray-800 p-4 rounded-lg">
+          <label class="block text-lg mb-2">Load Lichess Puzzle</label>
+          <div class="flex gap-2">
+            <input id="lichess-url" type="text" placeholder="https://lichess.org/training/XXXXX" class="flex-1 p-2 bg-gray-900 rounded text-sm">
+            <button id="load-puzzle" class="bg-purple-600 px-4 py-2 rounded hover:bg-purple-700">Load</button>
+          </div>
         </div>
 
-        <div class="flex flex-col items-center">
-            <div class="w-full max-w-[500px]">
-                <div id="myBoard" class="board-container w-full"></div>
-            </div>
-            
-            <div class="mt-6 flex gap-8 text-center">
-               <div class="bg-white px-4 py-2 rounded shadow text-sm">
-                    <span id="moveCount" class="block font-bold text-2xl text-slate-800">0</span>
-                    <span class="text-gray-500 uppercase text-xs font-bold">Moves</span>
-               </div>
-               <div class="bg-white px-4 py-2 rounded shadow text-sm">
-                    <span id="checkStatus" class="block font-bold text-2xl text-slate-800">NO</span>
-                    <span class="text-gray-500 uppercase text-xs font-bold">Check</span>
-               </div>
-            </div>
-
-            <div id="mistakesContainer" class="hidden mt-8 w-full max-w-[500px]">
-                <h4 class="font-bold text-gray-700 mb-2 flex items-center gap-2"><i data-lucide="history" class="w-4 h-4"></i> Session Mistakes</h4>
-                <ul id="mistakesList" class="bg-white rounded-lg shadow divide-y">
-                    </ul>
-            </div>
+        <!-- FEN Input -->
+        <div class="bg-gray-800 p-4 rounded-lg">
+          <label class="block text-lg mb-2">Current FEN</label>
+          <textarea id="fen-input" class="w-full bg-gray-900 p-2 rounded text-sm h-20 font-mono"></textarea>
+          <button id="set-fen" class="mt-2 bg-green-600 px-4 py-2 rounded hover:bg-green-700 w-full">Reset Board</button>
         </div>
+
+        <!-- Moves -->
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-lg mb-2">Your Move</label>
+            <input id="user-move-input" type="text" placeholder="e.g. c6" class="w-full p-2 bg-gray-900 rounded text-sm">
+          </div>
+          <div>
+            <label class="block text-lg mb-2">Best Move</label>
+            <input id="best-move-input" type="text" readonly class="w-full p-2 bg-green-900 rounded text-sm">
+          </div>
+        </div>
+
+        <button id="deep-analysis-btn" class="w-full bg-indigo-600 px-4 py-3 rounded hover:bg-indigo-700 text-lg font-bold">Deep Analysis</button>
+
+        <!-- Analysis Section -->
+        <div id="analysis-section" class="space-y-4 hidden">
+          <div id="classification" class="p-4 rounded text-white"></div>
+          <div id="explanation" class="bg-gray-800 p-4 rounded"></div>
+          <div class="bg-gray-800 p-4 rounded">
+            <h3 class="text-lg font-bold mb-2">Your Move Variations</h3>
+            <select id="your-variation-select" class="w-full p-2 bg-gray-900 rounded mb-2"></select>
+            <div class="flex gap-2">
+              <button id="your-prev" class="bg-blue-600 px-4 py-2 rounded">Prev</button>
+              <button id="your-next" class="bg-blue-600 px-4 py-2 rounded">Next</button>
+            </div>
+            <p id="your-var-eval" class="mt-2"></p>
+          </div>
+          <div class="bg-gray-800 p-4 rounded">
+            <h3 class="text-lg font-bold mb-2">Best Move Variations</h3>
+            <select id="best-variation-select" class="w-full p-2 bg-gray-900 rounded mb-2"></select>
+            <div class="flex gap-2">
+              <button id="best-prev" class="bg-blue-600 px-4 py-2 rounded">Prev</button>
+              <button id="best-next" class="bg-blue-600 px-4 py-2 rounded">Next</button>
+            </div>
+            <p id="best-var-eval" class="mt-2"></p>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <script>
-        // --- VARIABLES ---
-        var board = null;
-        var game = new Chess();
-        var $status = $('#status');
-        var $fen = $('#fenInput');
-        var $pgn = $('#pgnInput');
+    <!-- Status -->
+    <div id="status" class="text-center text-yellow-400"></div>
+  </div>
 
-        // --- INITIALIZATION ---
-        $(document).ready(function() {
-            lucide.createIcons(); // Load Icons
+  <script>
+    let board = null;
+    let game = new Chess();
+    let stockfish = null;
+    let orientation = 'white';
+    let mode = 'analyze';
+    let bestMoveUCI = '';
+    let mistakes = JSON.parse(localStorage.getItem('chessMistakes') || '[]');
+    let originalFen = '';
+    let yourVariations = []; // array of {pv: [san1, san2...], uci: [uci1...], eval: num}
+    let bestVariations = [];
+    let currentVarType = ''; // 'your' or 'best'
+    let currentVarIndex = 0;
+    let currentStep = 0;
 
-            // Config for Chessboard.js
-            var config = {
-                draggable: true,
-                position: 'start',
-                onDragStart: onDragStart,
-                onDrop: onDrop,
-                onSnapEnd: onSnapEnd,
-                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
-            }
-            
-            board = Chessboard('myBoard', config);
-            $(window).resize(board.resize);
-            
-            updateStatus();
-            
-            // Hide loading screen
-            setTimeout(() => {
-                document.getElementById('loading').style.display = 'none';
-            }, 500);
-        });
-
-        // --- CHESS LOGIC ---
-        function onDragStart(source, piece, position, orientation) {
-            // do not pick up pieces if the game is over
-            if (game.game_over()) return false;
-
-            // only pick up pieces for the side to move
-            if ((game.turn() === 'w' && piece.search(/^b/) !== -1) ||
-                (game.turn() === 'b' && piece.search(/^w/) !== -1)) {
-                return false;
-            }
+    // Init Stockfish
+    function initStockfish() {
+      stockfish = new Worker('https://cdn.jsdelivr.net/npm/stockfish@16/src/stockfish.js');
+      stockfish.postMessage('uci');
+      stockfish.postMessage('setoption name MultiPV value 3');
+      stockfish.postMessage('isready');
+      stockfish.onmessage = function(event) {
+        const msg = event.data;
+        if (msg.startsWith('bestmove')) {
+          $('#status').text('Analysis complete.');
+          if (currentAnalysis === 'original') {
+            bestVariations = lastPVs;
+            $('#best-move-input').val(lastPVs[0].pv[0] || '');
+          } else if (currentAnalysis = 'user') {
+            yourVariations = lastPVs;
+          } else if (currentAnalysis = 'best') {
+            // Optional, if need deeper for best
+          }
+          if (mode === 'quiz') enableBoard();
+        } else if (msg.startsWith('info')) {
+          const multipv = msg.match(/multipv (\d+)/)?.[1];
+          const score = msg.match(/score cp (-?\d+)/)?.[1];
+          const pvStr = msg.match(/pv (.*)/)?.[1];
+          if (multipv && pvStr) {
+            const pvUci = pvStr.split(' ');
+            const tempGame = new Chess(currentFen);
+            const pvSan = [];
+            pvUci.forEach(uci => {
+              const move = tempGame.move(uci);
+              if (move) pvSan.push(move.san);
+            });
+            lastPVs[parseInt(multipv) - 1] = {pv: pvSan, uci: pvUci, eval: (parseFloat(score) / 100).toFixed(2)};
+          }
+          if (score) {
+            const eval = (parseFloat(score) / 100).toFixed(2);
+            $('#eval').text(eval).removeClass('text-green-400 text-red-400').addClass(eval > 0 ? 'text-green-400' : 'text-red-400');
+          }
         }
+      };
+    }
 
-        function onDrop(source, target) {
-            // see if the move is legal
-            var move = game.move({
-                from: source,
-                to: target,
-                promotion: 'q' // NOTE: always promote to a queen for example simplicity
-            })
+    // Init Board
+    function initBoard(fen = 'start') {
+      const config = {
+        draggable: true,
+        position: fen,
+        onDragStart: onDragStart,
+        onDrop: onDrop,
+        onSnapEnd: onSnapEnd,
+        orientation: orientation,
+        showNotation: true,
+        pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+      };
+      board = Chessboard('board', config);
+      addArrowsOverlay();
+    }
 
-            // illegal move
-            if (move === null) return 'snapback';
+    // Add SVG for arrows
+    function addArrowsOverlay() {
+      if ($('.arrows').length === 0) {
+        $('#board').css('position', 'relative').append(`
+          <svg class="arrows" style="position: absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;">
+            <defs>
+              <marker id="arrowhead" viewBox="0 0 10 10" refX="3" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="green" />
+              </marker>
+            </defs>
+          </svg>
+        `);
+      }
+    }
 
-            // Valid Move
-            updateStatus();
-            document.getElementById('userMove').value = move.san;
-            document.getElementById('analysisResult').classList.add('hidden'); // clear old analysis
+    // Draw Arrow for UCI
+    function drawArrow(uci) {
+      const from = uci.slice(0,2);
+      const to = uci.slice(2,4);
+      const fromSq = $('.square-' + from);
+      const toSq = $('.square-' + to);
+      if (fromSq.length && toSq.length) {
+        const squareSize = fromSq.outerWidth();
+        const fromPos = fromSq.position();
+        const toPos = toSq.position();
+        const x1 = fromPos.left + squareSize / 2;
+        const y1 = fromPos.top + squareSize / 2;
+        const x2 = toPos.left + squareSize / 2;
+        const y2 = toPos.top + squareSize / 2;
+        const line = `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="green" stroke-width="5" marker-end="url(#arrowhead)" />`;
+        $('.arrows').html(line);
+      }
+    }
+
+    // Clear Arrow
+    function clearArrow() {
+      $('.arrows').html('');
+    }
+
+    // Drag/Drop Handlers
+    function onDragStart(source, piece) {
+      if (game.game_over() || (game.turn() === 'w' && piece.search(/^b/) !== -1) || (game.turn() === 'b' && piece.search(/^w/) !== -1)) return false;
+    }
+
+    function onDrop(source, target) {
+      const move = game.move({ from: source, to: target, promotion: 'q' });
+      if (move === null) return 'snapback';
+      $('#user-move-input').val(move.san);
+      $('#user-move').removeClass('hidden');
+      if (mode === 'quiz') {
+        checkQuiz(move.san);
+      }
+      updateStatus();
+    }
+
+    function onSnapEnd() {
+      board.position(game.fen());
+    }
+
+    // Load Lichess Puzzle
+    $('#load-puzzle').click(async function() {
+      const url = $('#lichess-url').val();
+      if (!url.includes('lichess.org/training/')) return alert('Invalid Lichess URL');
+      try {
+        const id = url.match(/training\/(\w+)/)[1];
+        const res = await fetch(`https://lichess.org/api/puzzle/${id}`);
+        const data = await res.json();
+        const fen = data.puzzle.fen;
+        $('#fen-input').val(fen);
+        game.load(fen);
+        bestMoveUCI = data.puzzle.solution[0];
+        const move = game.move(bestMoveUCI);
+        $('#best-move-input').val(move ? move.san : '');
+        game.undo();
+        initBoard(fen);
+        updateArrows([bestMoveUCI]);
+        alert('Puzzle loaded! Make the solution move in quiz mode.');
+      } catch (e) {
+        alert('Failed to load puzzle. Try manual FEN.');
+      }
+    });
+
+    // Set FEN
+    $('#set-fen').click(function() {
+      const fen = $('#fen-input').val();
+      game.load(fen);
+      originalFen = fen;
+      initBoard(fen);
+      analyze();
+    });
+
+    // Flip
+    $('#flip-btn').click(() => {
+      orientation = orientation === 'white' ? 'black' : 'white';
+      board.orientation(orientation);
+    });
+
+    // Deep Analysis Button
+    $('#deep-analysis-btn').click(function() {
+      const userSan = $('#user-move-input').val();
+      if (!userSan) return alert('Enter your move');
+      const userMove = game.move(userSan);
+      if (!userMove) return alert('Invalid move');
+      game.undo();
+      // Assume best is already computed, or recompute
+      // For simplicity, assume analyze was run, bestVariations have the original
+      // Push user move, analyze for user variations
+      game.push(userMove);
+      currentFen = game.fen();
+      currentAnalysis = 'user';
+      lastPVs = [];
+      stockfish.postMessage('position fen ' + currentFen);
+      stockfish.postMessage('go depth 20');
+      game.undo();
+      // After, show the section
+      $('#analysis-section').removeClass('hidden');
+      // Classification
+      const originalEval = bestVariations[0] ? bestVariations[0].eval : 0;
+      // After user, the eval is for black, flip it
+      const userEval = - yourVariations[0].eval; // after user, black's eval, flip to white's perspective
+      const delta = originalEval - userEval;
+      let classType = 'good';
+      if (delta > 3) classType = 'blunder';
+      else if (delta > 1) classType = 'mistake';
+      else if (delta > 0.5) classType = 'inaccuracy';
+      else if (delta > 0) classType = 'miss';
+      const color = {blunder: 'bg-red-600', mistake: 'bg-orange-600', inaccuracy: 'bg-yellow-600', miss: 'bg-blue-600', good: 'bg-green-600'};
+      $('#classification').addClass(color[classType]).text(classType.toUpperCase());
+      // Explanation
+      $('#explanation').text(`Your move is a ${classType} because it worsens your position by ${delta.toFixed(2)} pawns. The opponent can exploit it leading to an evaluation of ${userEval.toFixed(2)} for white.`);
+      // Populate selects
+      $('#your-variation-select').empty();
+      yourVariations.forEach((v, i) => {
+        const opt = $('<option>').val(i).text(`Variation ${i+1}: eval ${v.eval}`);
+        $('#your-variation-select').append(opt);
+      });
+      $('#best-variation-select').empty();
+      bestVariations.forEach((v, i) => {
+        const opt = $('<option>').val(i).text(`Variation ${i+1}: eval ${v.eval}`);
+        $('#best-variation-select').append(opt);
+      });
+    });
+
+    // Select change
+    $('#your-variation-select').change(function() {
+      currentVarType = 'your';
+      currentVarIndex = parseInt($(this).val());
+      currentStep = 0;
+      updateVariationBoard();
+    });
+    $('#best-variation-select').change(function() {
+      currentVarType = 'best';
+      currentVarIndex = parseInt($(this).val());
+      currentStep = 0;
+      updateVariationBoard();
+    });
+
+    // Prev/Next
+    $('#your-prev').click(function() {
+      if (currentStep > 0) currentStep--;
+      updateVariationBoard();
+    });
+    $('#your-next').click(function() {
+      if (currentStep < yourVariations[currentVarIndex].pv.length) currentStep++;
+      updateVariationBoard();
+    });
+    $('#best-prev').click(function() {
+      if (currentStep > 0) currentStep--;
+      updateVariationBoard();
+    });
+    $('#best-next').click(function() {
+      if (currentStep < bestVariations[currentVarIndex].pv.length) currentStep++;
+      updateVariationBoard();
+    });
+
+    // Update Variation Board
+    function updateVariationBoard() {
+      const vars = currentVarType === 'your' ? yourVariations : bestVariations;
+      const pv = vars[currentVarIndex].pv;
+      const uci = vars[currentVarIndex].uci;
+      const temp = new Chess(originalFen);
+      for (let i = 0; i < currentStep; i++) {
+        temp.move(pv[i]);
+      }
+      board.position(temp.fen());
+      clearArrow();
+      if (currentStep < pv.length) {
+        drawArrow(uci[currentStep]);
+      }
+      const finalTemp = new Chess(originalFen);
+      pv.forEach(m => finalTemp.move(m));
+      const mat = material(finalTemp.fen());
+      const varEval = vars[currentVarIndex].eval;
+      const pId = currentVarType + '-var-eval';
+      $('#' + pId).text(`Line: ${pv.join(' ')} | Final eval: ${varEval} | Material: ${mat}`);
+    }
+
+    // Material Calculation
+    function material(fen) {
+      const temp = new Chess(fen);
+      let white = 0, black = 0;
+      const values = {p:1, n:3, b:3, r:5, q:9};
+      chess.SQUARE_NAMES.forEach(sq => {
+        const p = temp.get(sq);
+        if (p) {
+          const val = values[p.type] || 0;
+          if (p.color === 'w') white += val;
+          else black += val;
         }
+      });
+      return white - black;
+    }
 
-        function onSnapEnd() {
-            board.position(game.fen());
-        }
-
-        function updateStatus() {
-            var status = '';
-            var moveColor = 'White';
-            if (game.turn() === 'b') {
-                moveColor = 'Black';
-            }
-
-            if (game.in_checkmate()) {
-                status = 'Game over, ' + moveColor + ' is in checkmate.';
-            } else if (game.in_draw()) {
-                status = 'Game over, drawn position';
-            } else {
-                status = moveColor + ' to move';
-                if (game.in_check()) {
-                    status += ', ' + moveColor + ' is in check';
-                }
-            }
-
-            $status.html(status);
-            $fen.val(game.fen());
-            
-            // Update stats
-            document.getElementById('moveCount').innerText = game.history().length;
-            document.getElementById('checkStatus').innerText = game.in_check() ? 'YES' : 'NO';
-            if(game.in_check()) {
-                document.getElementById('checkStatus').className = "block font-bold text-2xl text-red-600";
-            } else {
-                document.getElementById('checkStatus').className = "block font-bold text-2xl text-slate-800";
-            }
-        }
-
-        // --- CONTROLS ---
-        
-        // Listen for FEN paste
-        $('#fenInput').on('change', function() {
-            var val = $(this).val();
-            if(val === 'start') {
-                game.reset();
-            } else {
-                var loaded = game.load(val);
-                if(!loaded) {
-                    alert("Invalid FEN!");
-                    return;
-                }
-            }
-            board.position(game.fen());
-            updateStatus();
-        });
-
-        function resetGame() {
-            game.reset();
-            board.start();
-            updateStatus();
-            document.getElementById('userMove').value = '';
-            document.getElementById('bestMove').value = '';
-            document.getElementById('analysisResult').classList.add('hidden');
-        }
-
-        function loadPGN() {
-            var pgn = $pgn.val();
-            var loaded = game.load_pgn(pgn);
-            if(loaded) {
-                board.position(game.fen());
-                updateStatus();
-                alert("Game loaded successfully!");
-            } else {
-                alert("Invalid PGN format. Please check your input.");
-            }
-        }
-
-        // --- ANALYSIS SIMULATION ---
-        async function analyzeMove() {
-            var userMove = document.getElementById('userMove').value;
-            var bestMove = document.getElementById('bestMove').value;
-            var btn = document.getElementById('analyzeBtn');
-
-            if (!userMove || !bestMove) {
-                alert("Please enter both 'Your Move' and 'Best Move' to compare.");
-                return;
-            }
-
-            // UI Loading State
-            btn.innerHTML = "Analyzing...";
-            btn.disabled = true;
-            
-            // Mock Delay
-            await new Promise(r => setTimeout(r, 1000));
-
-            // Logic
-            var cleanUser = userMove.replace(/[+#]/g, '').trim();
-            var cleanBest = bestMove.replace(/[+#]/g, '').trim();
-            var isCorrect = cleanUser === cleanBest;
-
-            // Render Result
-            var resultBox = document.getElementById('analysisResult');
-            var header = document.getElementById('analysisHeader');
-            var title = document.getElementById('analysisTitle');
-            var icon = document.getElementById('analysisIcon');
-            var text = document.getElementById('analysisText');
-            var advice = document.getElementById('analysisAdvice');
-
-            resultBox.classList.remove('hidden');
-
-            if (isCorrect) {
-                header.className = "p-4 bg-green-100 text-green-800 flex items-center gap-3";
-                title.innerText = "Excellent Move";
-                // Update Icon to check
-                icon.setAttribute('data-lucide', 'check-circle');
-                text.innerText = "You found the best move! This optimizes your position and maintains the initiative.";
-                advice.innerText = "Keep calculating forcing moves like checks and captures.";
-            } else {
-                header.className = "p-4 bg-red-100 text-red-800 flex items-center gap-3";
-                title.innerText = "Mistake / Inaccuracy";
-                // Update Icon to X
-                icon.setAttribute('data-lucide', 'x-circle');
-                text.innerText = "The engine prefers " + bestMove + ". Your move (" + userMove + ") might miss a tactical opportunity or allow the opponent to equalize.";
-                advice.innerText = "Always check for Checks, Captures, and Threats (CCT) before moving.";
-                
-                // Add to mistake list
-                addMistake(userMove, bestMove);
-            }
-            
-            // Refresh icons
-            lucide.createIcons();
-            
-            // Reset Button
-            btn.innerHTML = '<i data-lucide="target" class="w-5 h-5 mr-2"></i> Deep Analysis';
-            btn.disabled = false;
-        }
-
-        function addMistake(user, best) {
-            var container = document.getElementById('mistakesContainer');
-            var list = document.getElementById('mistakesList');
-            container.classList.remove('hidden');
-            
-            var li = document.createElement('li');
-            li.className = "p-3 text-sm flex justify-between";
-            li.innerHTML = `<span>You played <strong>${user}</strong></span><span class="text-gray-500">Best was ${best}</span>`;
-            list.appendChild(li);
-        }
-
-        function setMode(mode) {
-            // Simple visual toggle for now
-            var btnAnalyze = document.getElementById('btn-analyze');
-            var btnQuiz = document.getElementById('btn-quiz');
-            
-            if(mode === 'analyze') {
-                btnAnalyze.className = "px-4 py-1.5 rounded-full text-sm font-medium transition bg-blue-600";
-                btnQuiz.className = "px-4 py-1.5 rounded-full text-sm font-medium transition hover:bg-slate-800";
-            } else {
-                btnQuiz.className = "px-4 py-1.5 rounded-full text-sm font-medium transition bg-blue-600";
-                btnAnalyze.className = "px-4 py-1.5 rounded-full text-sm font-medium transition hover:bg-slate-800";
-                alert("Quiz Mode Active: Hide the 'Best Move' and try to guess it!");
-            }
-        }
-    </script>
+    // Init
+    $(document).ready(function() {
+      initStockfish();
+      initBoard();
+      updateMistakesList();
+      updateStatus();
+      $('#fen-input').val(game.fen());
+      originalFen = game.fen();
+    });
+  </script>
 </body>
 </html>
