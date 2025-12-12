@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MasterChess Analyzer</title>
+  <title>Stockfish Chess Analyzer with Lichess & Chessboard.js</title>
   <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/stockfish@16/src/stockfish.js"></script>
@@ -11,8 +11,9 @@
   <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    #board { width: 500px; margin: 20px auto; position: relative; }
-    .arrows { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+    #board { width: 500px; margin: 20px auto; }
+    .square-light { background-color: #f0d9b5; }
+    .square-dark { background-color: #b58863; }
   </style>
 </head>
 <body class="bg-gray-900 text-white min-h-screen p-4">
@@ -34,14 +35,6 @@
 
       <!-- Controls -->
       <div class="space-y-6">
-        <!-- API Token -->
-        <div class="bg-gray-800 p-4 rounded-lg">
-          <label class="block text-lg mb-2">Lichess API Token (Optional)</label>
-          <input id="api-token" type="password" placeholder="lip_QZ40lrFICPlpPs7zENfr" class="w-full p-2 bg-gray-900 rounded text-sm">
-          <button id="save-token" class="mt-2 bg-purple-600 px-4 py-2 rounded hover:bg-purple-700">Save Token</button>
-          <p class="text-xs text-gray-400 mt-1">For puzzle loading & activity (puzzle:read scope)</p>
-        </div>
-
         <!-- Lichess Puzzle Loader -->
         <div class="bg-gray-800 p-4 rounded-lg">
           <label class="block text-lg mb-2">Load Lichess Puzzle</label>
@@ -49,7 +42,6 @@
             <input id="lichess-url" type="text" placeholder="https://lichess.org/training/XXXXX" class="flex-1 p-2 bg-gray-900 rounded text-sm">
             <button id="load-puzzle" class="bg-purple-600 px-4 py-2 rounded hover:bg-purple-700">Load</button>
           </div>
-          <button id="load-daily" class="w-full mt-2 bg-indigo-600 px-4 py-2 rounded hover:bg-indigo-700">Load Daily Puzzle</button>
         </div>
 
         <!-- FEN Input -->
@@ -71,12 +63,11 @@
           </div>
         </div>
 
-        <button id="analyze-btn" class="w-full bg-blue-600 px-4 py-3 rounded hover:bg-blue-700 text-lg font-bold">Analyze</button>
         <button id="deep-analysis-btn" class="w-full bg-indigo-600 px-4 py-3 rounded hover:bg-indigo-700 text-lg font-bold">Deep Analysis</button>
 
         <!-- Analysis Section -->
         <div id="analysis-section" class="space-y-4 hidden">
-          <div id="classification" class="p-4 rounded text-white font-bold"></div>
+          <div id="classification" class="p-4 rounded text-white"></div>
           <div id="explanation" class="bg-gray-800 p-4 rounded"></div>
           <div class="bg-gray-800 p-4 rounded">
             <h3 class="text-lg font-bold mb-2">Your Move Variations</h3>
@@ -87,4 +78,317 @@
             </div>
             <p id="your-var-eval" class="mt-2"></p>
           </div>
-          <div class="bg-gray-800 p
+          <div class="bg-gray-800 p-4 rounded">
+            <h3 class="text-lg font-bold mb-2">Best Move Variations</h3>
+            <select id="best-variation-select" class="w-full p-2 bg-gray-900 rounded mb-2"></select>
+            <div class="flex gap-2">
+              <button id="best-prev" class="bg-blue-600 px-4 py-2 rounded">Prev</button>
+              <button id="best-next" class="bg-blue-600 px-4 py-2 rounded">Next</button>
+            </div>
+            <p id="best-var-eval" class="mt-2"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status -->
+    <div id="status" class="text-center text-yellow-400"></div>
+  </div>
+
+  <script>
+    let board = null;
+    let game = new Chess();
+    let stockfish = null;
+    let orientation = 'white';
+    let mode = 'analyze';
+    let bestMoveUCI = '';
+    let mistakes = JSON.parse(localStorage.getItem('chessMistakes') || '[]');
+    let originalFen = '';
+    let yourVariations = []; // array of {pv: [san1, san2...], uci: [uci1...], eval: num}
+    let bestVariations = [];
+    let currentVarType = ''; // 'your' or 'best'
+    let currentVarIndex = 0;
+    let currentStep = 0;
+
+    // Init Stockfish
+    function initStockfish() {
+      stockfish = new Worker('https://cdn.jsdelivr.net/npm/stockfish@16/src/stockfish.js');
+      stockfish.postMessage('uci');
+      stockfish.postMessage('setoption name MultiPV value 3');
+      stockfish.postMessage('isready');
+      stockfish.onmessage = function(event) {
+        const msg = event.data;
+        if (msg.startsWith('bestmove')) {
+          $('#status').text('Analysis complete.');
+          if (currentAnalysis === 'original') {
+            bestVariations = lastPVs;
+            $('#best-move-input').val(lastPVs[0].pv[0] || '');
+          } else if (currentAnalysis = 'user') {
+            yourVariations = lastPVs;
+          } else if (currentAnalysis = 'best') {
+            // Optional, if need deeper for best
+          }
+          if (mode === 'quiz') enableBoard();
+        } else if (msg.startsWith('info')) {
+          const multipv = msg.match(/multipv (\d+)/)?.[1];
+          const score = msg.match(/score cp (-?\d+)/)?.[1];
+          const pvStr = msg.match(/pv (.*)/)?.[1];
+          if (multipv && pvStr) {
+            const pvUci = pvStr.split(' ');
+            const tempGame = new Chess(currentFen);
+            const pvSan = [];
+            pvUci.forEach(uci => {
+              const move = tempGame.move(uci);
+              if (move) pvSan.push(move.san);
+            });
+            lastPVs[parseInt(multipv) - 1] = {pv: pvSan, uci: pvUci, eval: (parseFloat(score) / 100).toFixed(2)};
+          }
+          if (score) {
+            const eval = (parseFloat(score) / 100).toFixed(2);
+            $('#eval').text(eval).removeClass('text-green-400 text-red-400').addClass(eval > 0 ? 'text-green-400' : 'text-red-400');
+          }
+        }
+      };
+    }
+
+    // Init Board
+    function initBoard(fen = 'start') {
+      const config = {
+        draggable: true,
+        position: fen,
+        onDragStart: onDragStart,
+        onDrop: onDrop,
+        onSnapEnd: onSnapEnd,
+        orientation: orientation,
+        showNotation: true,
+        pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+      };
+      board = Chessboard('board', config);
+      addArrowsOverlay();
+    }
+
+    // Add SVG for arrows
+    function addArrowsOverlay() {
+      if ($('.arrows').length === 0) {
+        $('#board').css('position', 'relative').append(`
+          <svg class="arrows" style="position: absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;">
+            <defs>
+              <marker id="arrowhead" viewBox="0 0 10 10" refX="3" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="green" />
+              </marker>
+            </defs>
+          </svg>
+        `);
+      }
+    }
+
+    // Draw Arrow for UCI
+    function drawArrow(uci) {
+      const from = uci.slice(0,2);
+      const to = uci.slice(2,4);
+      const fromSq = $('.square-' + from);
+      const toSq = $('.square-' + to);
+      if (fromSq.length && toSq.length) {
+        const squareSize = fromSq.outerWidth();
+        const fromPos = fromSq.position();
+        const toPos = toSq.position();
+        const x1 = fromPos.left + squareSize / 2;
+        const y1 = fromPos.top + squareSize / 2;
+        const x2 = toPos.left + squareSize / 2;
+        const y2 = toPos.top + squareSize / 2;
+        const line = `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="green" stroke-width="5" marker-end="url(#arrowhead)" />`;
+        $('.arrows').html(line);
+      }
+    }
+
+    // Clear Arrow
+    function clearArrow() {
+      $('.arrows').html('');
+    }
+
+    // Drag/Drop Handlers
+    function onDragStart(source, piece) {
+      if (game.game_over() || (game.turn() === 'w' && piece.search(/^b/) !== -1) || (game.turn() === 'b' && piece.search(/^w/) !== -1)) return false;
+    }
+
+    function onDrop(source, target) {
+      const move = game.move({ from: source, to: target, promotion: 'q' });
+      if (move === null) return 'snapback';
+      $('#user-move-input').val(move.san);
+      $('#user-move').removeClass('hidden');
+      if (mode === 'quiz') {
+        checkQuiz(move.san);
+      }
+      updateStatus();
+    }
+
+    function onSnapEnd() {
+      board.position(game.fen());
+    }
+
+    // Load Lichess Puzzle
+    $('#load-puzzle').click(async function() {
+      const url = $('#lichess-url').val();
+      if (!url.includes('lichess.org/training/')) return alert('Invalid Lichess URL');
+      try {
+        const id = url.match(/training\/(\w+)/)[1];
+        const res = await fetch(`https://lichess.org/api/puzzle/${id}`);
+        const data = await res.json();
+        const fen = data.puzzle.fen;
+        $('#fen-input').val(fen);
+        game.load(fen);
+        bestMoveUCI = data.puzzle.solution[0];
+        const move = game.move(bestMoveUCI);
+        $('#best-move-input').val(move ? move.san : '');
+        game.undo();
+        initBoard(fen);
+        updateArrows([bestMoveUCI]);
+        alert('Puzzle loaded! Make the solution move in quiz mode.');
+      } catch (e) {
+        alert('Failed to load puzzle. Try manual FEN.');
+      }
+    });
+
+    // Set FEN
+    $('#set-fen').click(function() {
+      const fen = $('#fen-input').val();
+      game.load(fen);
+      originalFen = fen;
+      initBoard(fen);
+      analyze();
+    });
+
+    // Flip
+    $('#flip-btn').click(() => {
+      orientation = orientation === 'white' ? 'black' : 'white';
+      board.orientation(orientation);
+    });
+
+    // Deep Analysis Button
+    $('#deep-analysis-btn').click(function() {
+      const userSan = $('#user-move-input').val();
+      if (!userSan) return alert('Enter your move');
+      const userMove = game.move(userSan);
+      if (!userMove) return alert('Invalid move');
+      game.undo();
+      // Assume best is already computed, or recompute
+      // For simplicity, assume analyze was run, bestVariations have the original
+      // Push user move, analyze for user variations
+      game.push(userMove);
+      currentFen = game.fen();
+      currentAnalysis = 'user';
+      lastPVs = [];
+      stockfish.postMessage('position fen ' + currentFen);
+      stockfish.postMessage('go depth 20');
+      game.undo();
+      // After, show the section
+      $('#analysis-section').removeClass('hidden');
+      // Classification
+      const originalEval = bestVariations[0] ? bestVariations[0].eval : 0;
+      // After user, the eval is for black, flip it
+      const userEval = - yourVariations[0].eval; // after user, black's eval, flip to white's perspective
+      const delta = originalEval - userEval;
+      let classType = 'good';
+      if (delta > 3) classType = 'blunder';
+      else if (delta > 1) classType = 'mistake';
+      else if (delta > 0.5) classType = 'inaccuracy';
+      else if (delta > 0) classType = 'miss';
+      const color = {blunder: 'bg-red-600', mistake: 'bg-orange-600', inaccuracy: 'bg-yellow-600', miss: 'bg-blue-600', good: 'bg-green-600'};
+      $('#classification').addClass(color[classType]).text(classType.toUpperCase());
+      // Explanation
+      $('#explanation').text(`Your move is a ${classType} because it worsens your position by ${delta.toFixed(2)} pawns. The opponent can exploit it leading to an evaluation of ${userEval.toFixed(2)} for white.`);
+      // Populate selects
+      $('#your-variation-select').empty();
+      yourVariations.forEach((v, i) => {
+        const opt = $('<option>').val(i).text(`Variation ${i+1}: eval ${v.eval}`);
+        $('#your-variation-select').append(opt);
+      });
+      $('#best-variation-select').empty();
+      bestVariations.forEach((v, i) => {
+        const opt = $('<option>').val(i).text(`Variation ${i+1}: eval ${v.eval}`);
+        $('#best-variation-select').append(opt);
+      });
+    });
+
+    // Select change
+    $('#your-variation-select').change(function() {
+      currentVarType = 'your';
+      currentVarIndex = parseInt($(this).val());
+      currentStep = 0;
+      updateVariationBoard();
+    });
+    $('#best-variation-select').change(function() {
+      currentVarType = 'best';
+      currentVarIndex = parseInt($(this).val());
+      currentStep = 0;
+      updateVariationBoard();
+    });
+
+    // Prev/Next
+    $('#your-prev').click(function() {
+      if (currentStep > 0) currentStep--;
+      updateVariationBoard();
+    });
+    $('#your-next').click(function() {
+      if (currentStep < yourVariations[currentVarIndex].pv.length) currentStep++;
+      updateVariationBoard();
+    });
+    $('#best-prev').click(function() {
+      if (currentStep > 0) currentStep--;
+      updateVariationBoard();
+    });
+    $('#best-next').click(function() {
+      if (currentStep < bestVariations[currentVarIndex].pv.length) currentStep++;
+      updateVariationBoard();
+    });
+
+    // Update Variation Board
+    function updateVariationBoard() {
+      const vars = currentVarType === 'your' ? yourVariations : bestVariations;
+      const pv = vars[currentVarIndex].pv;
+      const uci = vars[currentVarIndex].uci;
+      const temp = new Chess(originalFen);
+      for (let i = 0; i < currentStep; i++) {
+        temp.move(pv[i]);
+      }
+      board.position(temp.fen());
+      clearArrow();
+      if (currentStep < pv.length) {
+        drawArrow(uci[currentStep]);
+      }
+      const finalTemp = new Chess(originalFen);
+      pv.forEach(m => finalTemp.move(m));
+      const mat = material(finalTemp.fen());
+      const varEval = vars[currentVarIndex].eval;
+      const pId = currentVarType + '-var-eval';
+      $('#' + pId).text(`Line: ${pv.join(' ')} | Final eval: ${varEval} | Material: ${mat}`);
+    }
+
+    // Material Calculation
+    function material(fen) {
+      const temp = new Chess(fen);
+      let white = 0, black = 0;
+      const values = {p:1, n:3, b:3, r:5, q:9};
+      chess.SQUARE_NAMES.forEach(sq => {
+        const p = temp.get(sq);
+        if (p) {
+          const val = values[p.type] || 0;
+          if (p.color === 'w') white += val;
+          else black += val;
+        }
+      });
+      return white - black;
+    }
+
+    // Init
+    $(document).ready(function() {
+      initStockfish();
+      initBoard();
+      updateMistakesList();
+      updateStatus();
+      $('#fen-input').val(game.fen());
+      originalFen = game.fen();
+    });
+  </script>
+</body>
+</html>
