@@ -1,292 +1,349 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Stockfish Chess Analyzer</title>
-  <script src="https://cdn.jsdelivr.net/npm/stockfish@16/src/stockfish.js"></script>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/chess.js@1.0.0-beta.6/chess.min.js"></script>
-  <style>
-    .square { width: 70px; height: 70px; }
-    .light { background-color: #f0d9b5; }
-    .dark { background-color: #b58863; }
-    .highlight-from { box-shadow: inset 0 0 0 5px rgba(255,255,0,0.8); }
-    .highlight-to { box-shadow: inset 0 0 0 5px rgba(0,255,0,0.8); }
-    .arrow { stroke: #48bb78; stroke-width: 10; marker-end: url(#arrowhead); }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Chess Analyzer Pro</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css" integrity="sha384-q94+BZtLrkL1/ohfjR8c6L+A6qzNH9R2hBLwyoAfu3i/WCvQjzL2RQJ3uNHDISdU" crossorigin="anonymous">
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js" integrity="sha384-8Vi8VHwn3vjQ9eUHUxex3JSN/NFqUg3QbPyX8kWyb93+8AC/pPWTzj+nHtbC5bxD" crossorigin="anonymous"></script>
+
+    <style>
+        .board-container {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            border: 8px solid #374151;
+            border-radius: 4px;
+        }
+        /* Loading Spinner */
+        #loading {
+            position: fixed; inset: 0; background: white; z-index: 50;
+            display: flex; justify-content: center; align-items: center;
+            font-size: 1.5rem; font-weight: bold; color: #3b82f6;
+        }
+    </style>
 </head>
-<body class="bg-gray-900 text-white min-h-screen">
-  <div id="root"></div>
+<body class="bg-stone-100 text-slate-800 font-sans">
 
-  <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
+    <div id="loading">Loading Chess Analyzer...</div>
 
-    const ChessAnalyzer = () => {
-      const [fen, setFen] = useState("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-      const [mode, setMode] = useState("analyze"); // analyze, quiz, practice
-      const [userMove, setUserMove] = useState("");
-      const [bestMove, setBestMove] = useState("");
-      const [evaluation, setEvaluation] = useState("0.0");
-      const [bestLine, setBestLine] = useState("");
-      const [arrows, setArrows] = useState([]);
-      const [selectedSquare, setSelectedSquare] = useState(null);
-      const [mistakes, setMistakes] = useState([]);
-      const [patterns, setPatterns] = useState({});
-      const [thinking, setThinking] = useState(false);
-      const [quizActive, setQuizActive] = useState(false);
-      const chessRef = useRef(new Chess());
-      const stockfishRef = useRef(null);
-
-      // Load Stockfish
-      useEffect(() => {
-        const sf = new Worker("https://cdn.jsdelivr.net/npm/stockfish@16/src/stockfish.js");
-        sf.postMessage("uci");
-        sf.postMessage("isready");
-        stockfishRef.current = sf;
-
-        // Load saved data
-        const savedMistakes = localStorage.getItem("chessMistakes");
-        if (savedMistakes) setMistakes(JSON.parse(savedMistakes));
-        const savedPatterns = localStorage.getItem("chessPatterns");
-        if (savedPatterns) setPatterns(JSON.parse(savedPatterns));
-
-        return () => sf.terminate();
-      }, []);
-
-      const chess = chessRef.current;
-      chess.load(fen);
-
-      const getBoard = () => {
-        const board = Array(8).fill(null).map(() => Array(8).fill(null));
-        const rows = fen.split(" ")[0].split("/");
-        let r = 0, c = 0;
-        for (let row of rows) {
-          for (let ch of row) {
-            if (isNaN(ch)) board[r][c++] = ch;
-            else c += parseInt(ch);
-          }
-          r++; c = 0;
-        }
-        return board;
-      };
-
-      const squareName = (r, c) => String.fromCharCode(97 + c) + (8 - r);
-      const nameToCoord = (name) => ({ r: 8 - parseInt(name[1]), c: name.charCodeAt(0) - 97 });
-
-      const pieceSymbol = {
-        'K': '♔','Q': '♕','R': '♖','B': '♗','N': '♘','P': '♙',
-        'k': '♚','q': '♛','r': '♜','b': '♝','n': '♞','p': '♟'
-      };
-
-      const analyzePosition = () => {
-        if (!stockfishRef.current) return;
-        setThinking(true);
-        setArrows([]);
-
-        const sf = stockfishRef.current;
-        sf.onmessage = (event) => {
-          const line = event.data;
-          if (line.startsWith("info depth")) {
-            const match = line.match(/score cp (-?\d+).*pv\s+(\S+)/);
-            if (match) {
-              const score = (parseInt(match[1]) / 100).toFixed(1);
-              setEvaluation(chess.turn() === 'w' ? score : (-score).toFixed(1));
-              const pvMove = match[2];
-              const from = pvMove.slice(0,2), to = pvMove.slice(2,4);
-              setArrows([{ from, to }]);
-              setBestMove(chess.move({ from, to, promotion: pvMove[4] || 'q' })?.san || "");
-            }
-          }
-          if (line.includes("bestmove")) {
-            const best = line.match(/bestmove\s+(\S+)/);
-            if (best) {
-              const move = best[1];
-              const from = move.slice(0,2), to = move.slice(2,4);
-              const san = chess.move({ from, to, promotion: move[4] || 'q' })?.san;
-              setBestMove(san || "");
-              setArrows([{ from, to }]);
-              setThinking(false);
-            }
-          }
-        };
-
-        sf.postMessage("position fen " + fen);
-        sf.postMessage("go depth 20");
-      };
-
-      const handleSquareClick = (r, c) => {
-        const sq = squareName(r, c);
-        if (selectedSquare) {
-          const from = selectedSquare;
-          try {
-            const move = chess.move({ from, to: sq, promotion: 'q' });
-            if (move) {
-              setFen(chess.fen());
-              setUserMove(move.san);
-              setSelectedSquare(null);
-              if (mode === "quiz") checkQuizAnswer(move.san);
-            }
-          else setSelectedSquare(null);
-          } catch (e) {
-            setSelectedSquare(null);
-          }
-        } else if (chess.get(sq)) {
-          setSelectedSquare(sq);
-        }
-      };
-
-      const startQuiz = () => {
-        setMode("quiz");
-        setQuizActive(true);
-        setUserMove("");
-        setBestMove("");
-        setArrows([]);
-        analyzePosition();
-      };
-
-      const checkQuizAnswer = (move) => {
-        if (move === bestMove) {
-          alert("Correct! Great job!");
-          setQuizActive(false);
-        } else {
-          const mistake = { fen, userMove: move, bestMove, date: new Date().toLocaleString() };
-          const updated = [...mistakes, mistake];
-          setMistakes(updated);
-          localStorage.setItem("chessMistakes", JSON.stringify(updated));
-          alert(`Wrong. Best was ${bestMove}`);
-        }
-      };
-
-      const exportPGN = () => {
-        const pgn = `[Event "Stockfish Analysis"]
-[FEN "${fen}"]
-
-1. ${userMove || "?"} ${bestMove ? "{" + bestMove + " " + evaluation + "}" : ""}`;
-        const blob = new Blob([pgn], {type: "text/plain"});
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = "analysis.pgn"; a.click();
-      };
-
-      const board = getBoard();
-
-      return (
-        <div className="max-w-6xl mx-auto p-6">
-          <h1 className="text-5xl font-bold text-center mb-8 text-yellow-400">Stockfish Chess Analyzer</h1>
-
-          <div className="grid lg:grid-cols-2 gap-10">
-            {/* Board */}
-            <div className="flex flex-col items-center">
-              <div className="relative inline-block border-4 border-yellow-600 rounded">
-                <div className="grid grid-cols-8">
-                  {board.map((row, r) => row.map((piece, c) => {
-                    const sq = squareName(r, c);
-                    const isLight = (r + c) % 2 === 0;
-                    const isSelected = selectedSquare === sq;
-                    const arrowTo = arrows.find(a => a.to === sq);
-                    return (
-                      <div
-                        key={sq}
-                        onClick={() => handleSquareClick(r, c)}
-                        className={`square flex items-center justify-center text-6xl cursor-pointer transition-all
-                          ${isLight ? 'light' : 'dark'}
-                          ${isSelected ? 'highlight-from' : ''}
-                          ${arrowTo ? 'highlight-to' : ''}`}
-                      >
-                        {piece && pieceSymbol[piece]}
-                      </div>
-                    );
-                  }))}
-                </div>
-
-                {/* Arrows */}
-                <svg className="absolute inset-0 w-full h-full pointer-events-none">
-                  <defs>
-                    <marker id="arrowhead" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto">
-                      <path d="M0,0 V12 L18,6 Z" fill="#48bb78"/>
-                    </marker>
-                  </defs>
-                  {arrows.map((a, i) => {
-                    const f = nameToCoord(a.from);
-                    const t = nameToCoord(a.to);
-                    return (
-                      <line
-                        key={i}
-                        x1={f.c * 70 + 35} y1={f.r * 70 + 35}
-                        x2={t.c * 70 + 35} y2={t.r * 70 + 35}
-                        className="arrow"
-                      />
-                    );
-                  })}
-                </svg>
-              </div>
-
-              <div className="mt-6 text-3xl font-bold text-yellow-300">
-                Evaluation: <span className={evaluation > 0 ? "text-green-400" : "text-red-400"}>{evaluation}</span>
-                {thinking && " (thinking...)"}
-              </div>
-              {bestMove && <div className="mt-4 text-xl">Best move: <strong>{bestMove}</strong></div>}
+    <nav class="bg-slate-900 text-white p-4 shadow-lg">
+        <div class="max-w-6xl mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <i data-lucide="book-open" class="w-6 h-6 text-blue-400"></i>
+                <h1 class="text-xl font-bold tracking-tight">MasterChess Analyzer</h1>
             </div>
-
-            {/* Controls */}
-            <div className="space-y-6">
-              <div className="bg-gray-800 p-6 rounded-lg">
-                <label className="block text-lg mb-2">FEN Position</label>
-                <textarea
-                  className="w-full bg-gray-900 p-3 rounded text-sm font-mono h-32"
-                  value={fen}
-                  onChange={e => setFen(e.target.value)}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <button
-                  onClick={analyzePosition}
-                  disabled={thinking}
-                  className="bg-blue-600 hover:bg-blue-700 py-4 rounded text-xl font-bold disabled:opacity-50"
-                >
-                  {thinking ? "Analyzing..." : "Analyze Position"}
-                </button>
-                <button
-                  onClick={startQuiz}
-                  className="bg-purple-600 hover:bg-purple-700 py-4 rounded text-xl font-bold"
-                >
-                  Quiz Mode
-                </button>
-              </div>
-
-              {userMove && (
-                <div className="bg-green-900 p-4 rounded">
-                  <strong>Your move:</strong> {userMove}
-                </div>
-              )}
-
-              <button
-                onClick={exportPGN}
-                className="w-full bg-gray-700 hover:bg-gray-600 py-3 rounded"
-              >
-                Export as PGN
-              </button>
-
-              {/* Mistakes & Patterns */}
-              <div className="bg-gray-800 p-6 rounded-lg mt-8">
-                <h2 className="text-2xl font-bold mb-4">Your Mistakes</h2>
-                {mistakes.slice(-5).reverse().map((m,i) => (
-                  <div key={i} className="text-sm mb-2">{m.userMove} → {m.bestMove}</div>
-                ))}
-              </div>
+            <div class="flex space-x-2">
+                <button onclick="setMode('analyze')" id="btn-analyze" class="px-4 py-1.5 rounded-full text-sm font-medium transition bg-blue-600">Analyze</button>
+                <button onclick="setMode('quiz')" id="btn-quiz" class="px-4 py-1.5 rounded-full text-sm font-medium transition hover:bg-slate-800">Quiz Mode</button>
             </div>
-          </div>
         </div>
-      );
-    };
+    </nav>
 
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<ChessAnalyzer />);
-  </script>
+    <div class="max-w-6xl mx-auto p-4 md:p-8 grid lg:grid-cols-2 gap-8">
+        
+        <div class="space-y-6">
+            <div class="bg-white p-4 rounded-lg shadow-sm border-l-4 border-blue-500 flex justify-between items-center">
+                <span id="status" class="font-semibold text-lg">White to move</span>
+                <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Stockfish 16 (Sim)</span>
+            </div>
+
+            <div class="bg-white p-6 rounded-xl shadow-md space-y-5">
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-500 mb-1">Current FEN</label>
+                    <input id="fenInput" type="text" class="w-full font-mono text-sm border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none" value="start">
+                    <button onclick="resetGame()" class="mt-2 text-xs text-blue-600 hover:underline">Reset Board</button>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-bold mb-1">Your Move</label>
+                        <input id="userMove" type="text" class="w-full border-2 border-slate-200 rounded-lg p-3 text-lg font-bold focus:border-blue-500 outline-none" placeholder="e4">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold mb-1 text-green-700">Best Move</label>
+                        <input id="bestMove" type="text" class="w-full border-2 border-green-100 bg-green-50 rounded-lg p-3 text-lg font-bold focus:border-green-500 outline-none" placeholder="e.g. Nf3">
+                    </div>
+                </div>
+
+                <button onclick="analyzeMove()" id="analyzeBtn" class="w-full bg-slate-900 text-white py-3 rounded-lg font-bold text-lg hover:bg-slate-800 transition shadow-lg flex justify-center items-center gap-2">
+                    <i data-lucide="target" class="w-5 h-5"></i> Deep Analysis
+                </button>
+            </div>
+
+            <div id="analysisResult" class="hidden bg-white rounded-xl shadow-md overflow-hidden animate-in fade-in slide-in-from-bottom-4">
+                <div id="analysisHeader" class="p-4 flex items-center gap-3">
+                    <i id="analysisIcon" data-lucide="check-circle" class="w-6 h-6"></i>
+                    <h3 id="analysisTitle" class="text-xl font-bold">Excellent</h3>
+                </div>
+                <div class="p-5 space-y-3">
+                    <p id="analysisText" class="text-gray-700 leading-relaxed">...</p>
+                    <div class="bg-blue-50 p-3 rounded text-sm text-blue-900 flex gap-2">
+                        <i data-lucide="lightbulb" class="w-4 h-4 mt-0.5 flex-shrink-0"></i>
+                        <span id="analysisAdvice">...</span>
+                    </div>
+                </div>
+            </div>
+
+             <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                 <h4 class="font-bold text-sm text-slate-700 mb-2 flex items-center gap-2"><i data-lucide="download" class="w-4 h-4"></i> Load Game (PGN)</h4>
+                 <textarea id="pgnInput" class="w-full text-xs font-mono border p-2 rounded h-20" placeholder='[Event "World Champ"] 1. e4 e5 ...'></textarea>
+                 <button onclick="loadPGN()" class="mt-2 bg-slate-200 hover:bg-slate-300 px-3 py-1 rounded text-xs font-bold text-slate-700">Load PGN</button>
+             </div>
+        </div>
+
+        <div class="flex flex-col items-center">
+            <div class="w-full max-w-[500px]">
+                <div id="myBoard" class="board-container w-full"></div>
+            </div>
+            
+            <div class="mt-6 flex gap-8 text-center">
+               <div class="bg-white px-4 py-2 rounded shadow text-sm">
+                    <span id="moveCount" class="block font-bold text-2xl text-slate-800">0</span>
+                    <span class="text-gray-500 uppercase text-xs font-bold">Moves</span>
+               </div>
+               <div class="bg-white px-4 py-2 rounded shadow text-sm">
+                    <span id="checkStatus" class="block font-bold text-2xl text-slate-800">NO</span>
+                    <span class="text-gray-500 uppercase text-xs font-bold">Check</span>
+               </div>
+            </div>
+
+            <div id="mistakesContainer" class="hidden mt-8 w-full max-w-[500px]">
+                <h4 class="font-bold text-gray-700 mb-2 flex items-center gap-2"><i data-lucide="history" class="w-4 h-4"></i> Session Mistakes</h4>
+                <ul id="mistakesList" class="bg-white rounded-lg shadow divide-y">
+                    </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- VARIABLES ---
+        var board = null;
+        var game = new Chess();
+        var $status = $('#status');
+        var $fen = $('#fenInput');
+        var $pgn = $('#pgnInput');
+
+        // --- INITIALIZATION ---
+        $(document).ready(function() {
+            lucide.createIcons(); // Load Icons
+
+            // Config for Chessboard.js
+            var config = {
+                draggable: true,
+                position: 'start',
+                onDragStart: onDragStart,
+                onDrop: onDrop,
+                onSnapEnd: onSnapEnd,
+                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+            }
+            
+            board = Chessboard('myBoard', config);
+            $(window).resize(board.resize);
+            
+            updateStatus();
+            
+            // Hide loading screen
+            setTimeout(() => {
+                document.getElementById('loading').style.display = 'none';
+            }, 500);
+        });
+
+        // --- CHESS LOGIC ---
+        function onDragStart(source, piece, position, orientation) {
+            // do not pick up pieces if the game is over
+            if (game.game_over()) return false;
+
+            // only pick up pieces for the side to move
+            if ((game.turn() === 'w' && piece.search(/^b/) !== -1) ||
+                (game.turn() === 'b' && piece.search(/^w/) !== -1)) {
+                return false;
+            }
+        }
+
+        function onDrop(source, target) {
+            // see if the move is legal
+            var move = game.move({
+                from: source,
+                to: target,
+                promotion: 'q' // NOTE: always promote to a queen for example simplicity
+            })
+
+            // illegal move
+            if (move === null) return 'snapback';
+
+            // Valid Move
+            updateStatus();
+            document.getElementById('userMove').value = move.san;
+            document.getElementById('analysisResult').classList.add('hidden'); // clear old analysis
+        }
+
+        function onSnapEnd() {
+            board.position(game.fen());
+        }
+
+        function updateStatus() {
+            var status = '';
+            var moveColor = 'White';
+            if (game.turn() === 'b') {
+                moveColor = 'Black';
+            }
+
+            if (game.in_checkmate()) {
+                status = 'Game over, ' + moveColor + ' is in checkmate.';
+            } else if (game.in_draw()) {
+                status = 'Game over, drawn position';
+            } else {
+                status = moveColor + ' to move';
+                if (game.in_check()) {
+                    status += ', ' + moveColor + ' is in check';
+                }
+            }
+
+            $status.html(status);
+            $fen.val(game.fen());
+            
+            // Update stats
+            document.getElementById('moveCount').innerText = game.history().length;
+            document.getElementById('checkStatus').innerText = game.in_check() ? 'YES' : 'NO';
+            if(game.in_check()) {
+                document.getElementById('checkStatus').className = "block font-bold text-2xl text-red-600";
+            } else {
+                document.getElementById('checkStatus').className = "block font-bold text-2xl text-slate-800";
+            }
+        }
+
+        // --- CONTROLS ---
+        
+        // Listen for FEN paste
+        $('#fenInput').on('change', function() {
+            var val = $(this).val();
+            if(val === 'start') {
+                game.reset();
+            } else {
+                var loaded = game.load(val);
+                if(!loaded) {
+                    alert("Invalid FEN!");
+                    return;
+                }
+            }
+            board.position(game.fen());
+            updateStatus();
+        });
+
+        function resetGame() {
+            game.reset();
+            board.start();
+            updateStatus();
+            document.getElementById('userMove').value = '';
+            document.getElementById('bestMove').value = '';
+            document.getElementById('analysisResult').classList.add('hidden');
+        }
+
+        function loadPGN() {
+            var pgn = $pgn.val();
+            var loaded = game.load_pgn(pgn);
+            if(loaded) {
+                board.position(game.fen());
+                updateStatus();
+                alert("Game loaded successfully!");
+            } else {
+                alert("Invalid PGN format. Please check your input.");
+            }
+        }
+
+        // --- ANALYSIS SIMULATION ---
+        async function analyzeMove() {
+            var userMove = document.getElementById('userMove').value;
+            var bestMove = document.getElementById('bestMove').value;
+            var btn = document.getElementById('analyzeBtn');
+
+            if (!userMove || !bestMove) {
+                alert("Please enter both 'Your Move' and 'Best Move' to compare.");
+                return;
+            }
+
+            // UI Loading State
+            btn.innerHTML = "Analyzing...";
+            btn.disabled = true;
+            
+            // Mock Delay
+            await new Promise(r => setTimeout(r, 1000));
+
+            // Logic
+            var cleanUser = userMove.replace(/[+#]/g, '').trim();
+            var cleanBest = bestMove.replace(/[+#]/g, '').trim();
+            var isCorrect = cleanUser === cleanBest;
+
+            // Render Result
+            var resultBox = document.getElementById('analysisResult');
+            var header = document.getElementById('analysisHeader');
+            var title = document.getElementById('analysisTitle');
+            var icon = document.getElementById('analysisIcon');
+            var text = document.getElementById('analysisText');
+            var advice = document.getElementById('analysisAdvice');
+
+            resultBox.classList.remove('hidden');
+
+            if (isCorrect) {
+                header.className = "p-4 bg-green-100 text-green-800 flex items-center gap-3";
+                title.innerText = "Excellent Move";
+                // Update Icon to check
+                icon.setAttribute('data-lucide', 'check-circle');
+                text.innerText = "You found the best move! This optimizes your position and maintains the initiative.";
+                advice.innerText = "Keep calculating forcing moves like checks and captures.";
+            } else {
+                header.className = "p-4 bg-red-100 text-red-800 flex items-center gap-3";
+                title.innerText = "Mistake / Inaccuracy";
+                // Update Icon to X
+                icon.setAttribute('data-lucide', 'x-circle');
+                text.innerText = "The engine prefers " + bestMove + ". Your move (" + userMove + ") might miss a tactical opportunity or allow the opponent to equalize.";
+                advice.innerText = "Always check for Checks, Captures, and Threats (CCT) before moving.";
+                
+                // Add to mistake list
+                addMistake(userMove, bestMove);
+            }
+            
+            // Refresh icons
+            lucide.createIcons();
+            
+            // Reset Button
+            btn.innerHTML = '<i data-lucide="target" class="w-5 h-5 mr-2"></i> Deep Analysis';
+            btn.disabled = false;
+        }
+
+        function addMistake(user, best) {
+            var container = document.getElementById('mistakesContainer');
+            var list = document.getElementById('mistakesList');
+            container.classList.remove('hidden');
+            
+            var li = document.createElement('li');
+            li.className = "p-3 text-sm flex justify-between";
+            li.innerHTML = `<span>You played <strong>${user}</strong></span><span class="text-gray-500">Best was ${best}</span>`;
+            list.appendChild(li);
+        }
+
+        function setMode(mode) {
+            // Simple visual toggle for now
+            var btnAnalyze = document.getElementById('btn-analyze');
+            var btnQuiz = document.getElementById('btn-quiz');
+            
+            if(mode === 'analyze') {
+                btnAnalyze.className = "px-4 py-1.5 rounded-full text-sm font-medium transition bg-blue-600";
+                btnQuiz.className = "px-4 py-1.5 rounded-full text-sm font-medium transition hover:bg-slate-800";
+            } else {
+                btnQuiz.className = "px-4 py-1.5 rounded-full text-sm font-medium transition bg-blue-600";
+                btnAnalyze.className = "px-4 py-1.5 rounded-full text-sm font-medium transition hover:bg-slate-800";
+                alert("Quiz Mode Active: Hide the 'Best Move' and try to guess it!");
+            }
+        }
+    </script>
 </body>
 </html>
