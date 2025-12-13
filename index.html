@@ -1,1144 +1,190 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Advanced Chess Analyzer Pro</title>
-    
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-    
-    <!-- Chess.js v0.10.3 - stable version with global Chess constructor -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-    
-    <!-- Chessboard.js v1.0.0 - stable version -->
-    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css" integrity="sha384-q94+BZtLrkL1/ohfjR8c6L+A6qzNH9R2hBLwyoAfu3i/WCvQjzL2RQJ3uNHDISdU" crossorigin="anonymous">
-    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js" integrity="sha384-8Vi8VHwn3vjQ9eUHUxex3JSN/NFqUg3QbPyX8kWyb93+8AC/pPWTzj+nHtbC5bxD" crossorigin="anonymous"></script>
+<meta charset="UTF-8">
+<title>Advanced Chess Trainer</title>
 
-    <style>
-        .board-container {
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-            border: 8px solid #374151;
-            border-radius: 4px;
-            position: relative;
-        }
-        #loading {
-            position: fixed; inset: 0; background: white; z-index: 50;
-            display: flex; justify-content: center; align-items: center;
-            font-size: 1.5rem; font-weight: bold; color: #3b82f6;
-        }
-        .variation-step {
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
-        .variation-step:hover {
-            background: rgba(59, 130, 246, 0.1);
-        }
-        .variation-step.active {
-            background: rgba(59, 130, 246, 0.2);
-            border-left: 4px solid #3b82f6;
-        }
-        .timeline-dot {
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: all 0.2s;
-            font-size: 11px;
-            font-weight: bold;
-        }
-        .timeline-dot:hover {
-            transform: scale(1.15);
-        }
-        .timeline-dot.active {
-            transform: scale(1.25);
-            box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
-        }
-    </style>
+<link rel="stylesheet" href="https://unpkg.com/chessboardjs@1.0.0/www/css/chessboard.css">
+
+<script src="https://unpkg.com/chess.js@1.0.0/chess.js"></script>
+<script src="https://unpkg.com/chessboardjs@1.0.0/www/js/chessboard.js"></script>
+
+<style>
+body {
+  background:#0f0f0f;
+  color:#eaeaea;
+  font-family: Arial, sans-serif;
+  display:flex;
+  gap:20px;
+  padding:20px;
+}
+#board { width:480px; }
+#panel { width:440px; }
+
+button {
+  background:#1976d2;
+  border:none;
+  color:white;
+  padding:8px 12px;
+  margin:4px 0;
+  cursor:pointer;
+}
+button:hover { background:#125ea8; }
+
+#explanation {
+  background:#1b1b1b;
+  padding:10px;
+  min-height:140px;
+  border-left:4px solid #1976d2;
+}
+
+.square-highlight {
+  box-shadow: inset 0 0 0 4px rgba(255,0,0,0.7);
+}
+
+.heat-low { background: rgba(255,0,0,0.15) !important; }
+.heat-mid { background: rgba(255,0,0,0.3) !important; }
+.heat-high { background: rgba(255,0,0,0.5) !important; }
+</style>
 </head>
-<body class="bg-stone-100 text-slate-800 font-sans">
 
-    <div id="loading">Loading Chess Analyzer...</div>
+<body>
+
+<div id="board"></div>
+
+<div id="panel">
+  <h2>Advanced Chess Trainer</h2>
+  <button onclick="newGame()">New Game</button>
+  <button onclick="explain()">Explain Last Move</button>
+  <button onclick="showBest()">Show Best Move</button>
+  <button onclick="toggleHeatmap()">Toggle Heatmap</button>
+
+  <div id="explanation">Play your opening.</div>
+</div>
+
+<script>
+const game = new Chess();
+let heatmap = {};
+let heatmapEnabled = false;
+
+// OPENING REPERTOIRE (EDIT THESE)
+const whiteOpening = ["e4", "Nf3", "Bc4"];
+const blackDefense = ["e5", "Nc6", "Nf6"];
+
+const board = Chessboard("board", {
+  draggable:true,
+  position:"start",
+  onDrop:onDrop
+});
+
+// STOCKFISH
+const engine = new Worker("https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish.js");
+engine.postMessage("uci");
+
+function newGame() {
+  game.reset();
+  board.position("start");
+  setText("New game started. Stick to your opening.");
+}
+
+function onDrop(from, to) {
+  const move = game.move({from, to, promotion:'q'});
+  if (!move) return "snapback";
+
+  board.position(game.fen());
+  checkOpening(move);
+  evaluate();
+}
+
+function checkOpening(move) {
+  const ply = game.history().length - 1;
+  const expected = game.turn() === 'b' ? whiteOpening : blackDefense;
+  if (ply < expected.length && move.san !== expected[ply]) {
+    markMistake(move.to);
+    setText(`
+<b>Opening Deviation</b><br>
+Expected: ${expected[ply]}<br>
+Played: ${move.san}<br><br>
+This breaks your planned structure and tempo.
+`);
+  }
+}
+
+function evaluate() {
+  engine.postMessage("position fen " + game.fen());
+  engine.postMessage("go depth 12");
+}
+
+engine.onmessage = e => {
+  if (e.data.includes("bestmove")) {
+    const best = e.data.split(" ")[1];
+    drawArrow(best);
+  }
+};
+
+function explain() {
+  const h = game.history({verbose:true});
+  if (!h.length) return;
+
+  const last = h[h.length-1];
+  setText(`
+<b>${last.san}</b><br><br>
+Consider:
+• Did this improve piece activity?<br>
+• Did it weaken squares?<br>
+• Did it allow tempo?<br><br>
+Strong moves increase pressure or reduce opponent options.
+`);
+}
+
+function showBest() {
+  setText("Green arrow shows engine-recommended move.");
+}
+
+function drawArrow(move) {
+  clearHighlights();
+  if (!move || move.length < 4) return;
+  const to = move.substring(2,4);
+  highlight(to);
+}
+
+function highlight(square) {
+  const el = document.querySelector(".square-" + square);
+  if (el) el.classList.add("square-highlight");
+}
+
+function clearHighlights() {
+  document.querySelectorAll(".square-highlight")
+    .forEach(e=>e.classList.remove("square-highlight"));
+}
+
+function markMistake(square) {
+  heatmap[square] = (heatmap[square] || 0) + 1;
+  applyHeatmap();
+}
+
+function applyHeatmap() {
+  if (!heatmapEnabled) return;
+  for (const sq in heatmap) {
+    const el = document.querySelector(".square-" + sq);
+    if (!el) continue;
+    el.classList.remove("heat-low","heat-mid","heat-high");
+    if (heatmap[sq] > 5) el.classList.add("heat-high");
+    else if (heatmap[sq] > 2) el.classList.add("heat-mid");
+    else el.classList.add("heat-low");
+  }
+}
+
+function toggleHeatmap() {
+  heatmapEnabled = !heatmapEnabled;
+  applyHeatmap();
+  setText("Mistake heatmap " + (heatmapEnabled ? "enabled" : "disabled"));
+}
+
+function setText(html) {
+  document.getElementById("explanation").innerHTML = html;
+}
+</script>
 
-    <nav class="bg-slate-900 text-white p-4 shadow-lg">
-        <div class="max-w-7xl mx-auto flex justify-between items-center">
-            <div class="flex items-center gap-2">
-                <i data-lucide="book-open" class="w-6 h-6 text-blue-400"></i>
-                <h1 class="text-xl font-bold tracking-tight">MasterChess Deep Analyzer Pro</h1>
-            </div>
-            <div class="flex space-x-2">
-                <button onclick="setMode('analyze')" id="btn-analyze" class="px-4 py-1.5 rounded-full text-sm font-medium transition bg-blue-600">Analyze</button>
-                <button onclick="setMode('quiz')" id="btn-quiz" class="px-4 py-1.5 rounded-full text-sm font-medium transition hover:bg-slate-800">Quiz Mode</button>
-            </div>
-        </div>
-    </nav>
-
-    <div class="max-w-7xl mx-auto p-4 md:p-8 grid lg:grid-cols-2 gap-8">
-        
-        <!-- Left Column: Controls -->
-        <div class="space-y-6">
-            <div class="bg-white p-4 rounded-lg shadow-sm border-l-4 border-blue-500 flex justify-between items-center">
-                <span id="status" class="font-semibold text-lg">White to move</span>
-                <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Lichess Cloud API</span>
-            </div>
-
-            <div class="bg-white p-6 rounded-xl shadow-md space-y-5">
-                <div>
-                    <label class="block text-xs font-bold uppercase text-gray-500 mb-1">Current FEN</label>
-                    <input id="fenInput" type="text" class="w-full font-mono text-sm border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none" value="start">
-                    <button onclick="resetGame()" class="mt-2 text-xs text-blue-600 hover:underline">Reset Board</button>
-                </div>
-
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-bold mb-1">Your Move</label>
-                        <input id="userMove" type="text" class="w-full border-2 border-slate-200 rounded-lg p-3 text-lg font-bold focus:border-blue-500 outline-none" placeholder="e.g. e4, Nf3">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-bold mb-1 text-green-700">Best Move</label>
-                        <input id="bestMove" type="text" readonly class="w-full border-2 border-green-100 bg-green-50 rounded-lg p-3 text-lg font-bold" placeholder="Will be shown">
-                    </div>
-                </div>
-
-                <button onclick="analyzeMove()" id="analyzeBtn" class="w-full bg-gradient-to-r from-slate-800 to-slate-900 text-white py-3 rounded-lg font-bold text-lg hover:from-slate-700 hover:to-slate-800 transition shadow-lg flex justify-center items-center gap-2">
-                    <i data-lucide="target" class="w-5 h-5"></i> Deep Analysis
-                </button>
-            </div>
-
-            <!-- Analysis Result Card -->
-            <div id="analysisResult" class="hidden bg-white rounded-xl shadow-md overflow-hidden">
-                <div id="analysisHeader" class="p-5">
-                    <div class="flex items-center gap-3 mb-2">
-                        <i id="analysisIcon" data-lucide="check-circle" class="w-7 h-7"></i>
-                        <h3 id="analysisTitle" class="text-2xl font-bold">Excellent</h3>
-                    </div>
-                    <div id="analysisStats" class="text-sm text-gray-600"></div>
-                </div>
-                <div class="px-5 pb-5 space-y-3">
-                    <p id="analysisText" class="text-gray-700 leading-relaxed"></p>
-                    <div class="bg-blue-50 p-3 rounded text-sm text-blue-900 flex gap-2">
-                        <i data-lucide="lightbulb" class="w-4 h-4 mt-0.5 flex-shrink-0"></i>
-                        <span id="analysisAdvice"></span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- PGN Loader -->
-            <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                <h4 class="font-bold text-sm text-slate-700 mb-2 flex items-center gap-2">
-                    <i data-lucide="download" class="w-4 h-4"></i> Load Game (PGN)
-                </h4>
-                <textarea id="pgnInput" class="w-full text-xs font-mono border p-2 rounded h-20" placeholder='[Event "Game"] 1. e4 e5 2. Nf3...'></textarea>
-                <button onclick="loadPGN()" class="mt-2 bg-slate-200 hover:bg-slate-300 px-3 py-1 rounded text-xs font-bold text-slate-700">Load PGN</button>
-            </div>
-        </div>
-
-        <!-- Right Column: Board -->
-        <div class="flex flex-col items-center">
-            <div class="w-full max-w-[500px]">
-                <div class="board-container w-full">
-                    <div id="myBoard" class="w-full"></div>
-                </div>
-            </div>
-            
-            <div class="mt-6 flex gap-8 text-center">
-                <div class="bg-white px-4 py-2 rounded shadow text-sm">
-                    <span id="moveCount" class="block font-bold text-2xl text-slate-800">0</span>
-                    <span class="text-gray-500 uppercase text-xs font-bold">Moves</span>
-                </div>
-                <div class="bg-white px-4 py-2 rounded shadow text-sm">
-                    <span id="checkStatus" class="block font-bold text-2xl text-slate-800">NO</span>
-                    <span class="text-gray-500 uppercase text-xs font-bold">Check</span>
-                </div>
-                <div class="bg-white px-4 py-2 rounded shadow text-sm">
-                    <span id="evalScore" class="block font-bold text-2xl text-slate-800">0.0</span>
-                    <span class="text-gray-500 uppercase text-xs font-bold">Eval</span>
-                </div>
-            </div>
-
-            <!-- Mistakes Log -->
-            <div id="mistakesContainer" class="hidden mt-8 w-full max-w-[500px]">
-                <h4 class="font-bold text-gray-700 mb-2 flex items-center gap-2">
-                    <i data-lucide="history" class="w-4 h-4"></i> Session Mistakes
-                </h4>
-                <ul id="mistakesList" class="bg-white rounded-lg shadow divide-y"></ul>
-            </div>
-        </div>
-    </div>
-
-    <!-- Deep Analysis Section -->
-    <div id="deepAnalysisSection" class="hidden max-w-7xl mx-auto p-4 md:p-8 space-y-6">
-        
-        <!-- Playback Controls -->
-        <div class="bg-white p-6 rounded-xl shadow-md">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold flex items-center gap-2">
-                    <i data-lucide="play-circle" class="w-6 h-6 text-blue-600"></i>
-                    Step-by-Step Variation Playback
-                </h2>
-                <div class="flex gap-2">
-                    <button id="autoPlayBtn" onclick="toggleAutoPlay()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2">
-                        <i data-lucide="play" class="w-4 h-4"></i> Auto Play
-                    </button>
-                </div>
-            </div>
-
-            <!-- Mode Selector -->
-            <div class="flex gap-2 mb-4">
-                <button id="modeYourMove" onclick="switchAnalysisMode('your')" class="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold transition">
-                    Your Move → Opponent's Refutation
-                </button>
-                <button id="modeBestMove" onclick="switchAnalysisMode('best')" class="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition">
-                    Best Move → Optimal Play
-                </button>
-            </div>
-
-            <!-- Variation Selector -->
-            <div class="mb-4">
-                <label class="block text-sm font-bold mb-2">Select Variation Line:</label>
-                <select id="variationSelect" onchange="changeVariation()" class="w-full p-2 border-2 border-gray-300 rounded-lg font-mono text-sm">
-                    <option value="0">Loading variations...</option>
-                </select>
-            </div>
-
-            <!-- Timeline -->
-            <div class="bg-gray-100 p-4 rounded-lg mb-4">
-                <label class="block text-sm font-bold mb-2">Move Timeline:</label>
-                <div id="timeline" class="flex gap-2 overflow-x-auto pb-2"></div>
-            </div>
-
-            <!-- Navigation Controls -->
-            <div class="flex gap-2">
-                <button onclick="goToMove('first')" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold">
-                    ⏮ First
-                </button>
-                <button onclick="goToMove('prev')" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold">
-                    ◀ Prev
-                </button>
-                <button onclick="goToMove('next')" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold">
-                    Next ▶
-                </button>
-                <button onclick="goToMove('last')" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold">
-                    Last ⏭
-                </button>
-            </div>
-        </div>
-
-        <!-- Move Analysis -->
-        <div class="grid md:grid-cols-2 gap-6">
-            <!-- Position Explanation -->
-            <div class="bg-white p-6 rounded-xl shadow-md">
-                <h3 class="text-xl font-bold mb-4 flex items-center gap-2">
-                    <i data-lucide="message-square" class="w-5 h-5 text-blue-600"></i>
-                    Position Analysis
-                </h3>
-                <div id="moveExplanation" class="space-y-3 text-gray-700"></div>
-            </div>
-
-            <!-- Threats & Tactics -->
-            <div class="bg-white p-6 rounded-xl shadow-md">
-                <h3 class="text-xl font-bold mb-4 flex items-center gap-2">
-                    <i data-lucide="alert-triangle" class="w-5 h-5 text-red-600"></i>
-                    Threats & Tactical Points
-                </h3>
-                <div id="tacticalAnalysis" class="space-y-3 text-gray-700"></div>
-            </div>
-        </div>
-
-        <!-- Variation Steps -->
-        <div class="bg-white p-6 rounded-xl shadow-md">
-            <h3 class="text-xl font-bold mb-4">Complete Variation Sequence</h3>
-            <div id="variationSteps" class="space-y-2"></div>
-        </div>
-    </div>
-
-    <script>
-        // === GLOBAL VARIABLES ===
-        var board = null;
-        var game = new Chess();
-        var originalFen = '';
-        var currentMode = 'your'; // 'your' or 'best'
-        var yourVariations = [];
-        var bestVariations = [];
-        var currentVariation = 0;
-        var currentStep = 0;
-        var autoPlayInterval = null;
-        var analysisGame = null;
-
-        // Material values
-        const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
-
-        // === BOARD INITIALIZATION ===
-        $(document).ready(function() {
-            // Initialize Lucide icons
-            if (typeof lucide !== 'undefined') {
-                lucide.createIcons();
-            }
-
-            const config = {
-                draggable: true,
-                position: 'start',
-                onDragStart: onDragStart,
-                onDrop: onDrop,
-                onSnapEnd: onSnapEnd,
-                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
-            };
-            
-            board = ChessBoard('myBoard', config);
-            addArrowsOverlay();
-            $(window).resize(board.resize);
-            
-            updateStatus();
-            originalFen = game.fen();
-            
-            setTimeout(() => {
-                $('#loading').hide();
-            }, 500);
-        });
-
-        function addArrowsOverlay() {
-            if ($('#myBoard .arrows').length === 0) {
-                $('#myBoard').css('position', 'relative').append(`
-                    <svg class="arrows" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10;">
-                        <defs>
-                            <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse">
-                                <path d="M0,0 L10,5 L0,10 z" fill="#22c55e" />
-                            </marker>
-                            <marker id="arrow-red" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse">
-                                <path d="M0,0 L10,5 L0,10 z" fill="#ef4444" />
-                            </marker>
-                            <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse">
-                                <path d="M0,0 L10,5 L0,10 z" fill="#3b82f6" />
-                            </marker>
-                            <marker id="arrow-yellow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse">
-                                <path d="M0,0 L10,5 L0,10 z" fill="#eab308" />
-                            </marker>
-                        </defs>
-                    </svg>
-                `);
-            }
-        }
-
-        function drawArrow(from, to, color = 'green') {
-            const $board = $('#myBoard');
-            const $from = $board.find('.square-' + from);
-            const $to = $board.find('.square-' + to);
-            
-            if ($from.length && $to.length) {
-                const boardPos = $board.offset();
-                const fromPos = $from.offset();
-                const toPos = $to.offset();
-                const squareSize = $from.width();
-                
-                const x1 = fromPos.left - boardPos.left + squareSize / 2;
-                const y1 = fromPos.top - boardPos.top + squareSize / 2;
-                const x2 = toPos.left - boardPos.left + squareSize / 2;
-                const y2 = toPos.top - boardPos.top + squareSize / 2;
-
-                const colorMap = {
-                    green: '#22c55e',
-                    red: '#ef4444',
-                    blue: '#3b82f6',
-                    yellow: '#eab308'
-                };
-
-                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                line.setAttribute('x1', x1);
-                line.setAttribute('y1', y1);
-                line.setAttribute('x2', x2);
-                line.setAttribute('y2', y2);
-                line.setAttribute('stroke', colorMap[color]);
-                line.setAttribute('stroke-width', '8');
-                line.setAttribute('opacity', '0.7');
-                line.setAttribute('marker-end', `url(#arrow-${color})`);
-                
-                $('.arrows')[0].appendChild(line);
-            }
-        }
-
-        function clearArrows() {
-            $('.arrows line').remove();
-        }
-
-        // === CHESS LOGIC ===
-        function onDragStart(source, piece) {
-            if (game.game_over()) return false;
-            if ((game.turn() === 'w' && piece.search(/^b/) !== -1) ||
-                (game.turn() === 'b' && piece.search(/^w/) !== -1)) {
-                return false;
-            }
-        }
-
-        function onDrop(source, target) {
-            const move = game.move({
-                from: source,
-                to: target,
-                promotion: 'q'
-            });
-
-            if (move === null) return 'snapback';
-
-            updateStatus();
-            $('#userMove').val(move.san);
-            $('#analysisResult').addClass('hidden');
-            $('#deepAnalysisSection').addClass('hidden');
-        }
-
-        function onSnapEnd() {
-            board.position(game.fen());
-        }
-
-        function updateStatus() {
-            let status = '';
-            const moveColor = game.turn() === 'w' ? 'White' : 'Black';
-
-            if (game.in_checkmate()) {
-                status = `Game over, ${moveColor} is in checkmate.`;
-            } else if (game.in_draw()) {
-                status = 'Game over, drawn position';
-            } else {
-                status = `${moveColor} to move`;
-                if (game.in_check()) {
-                    status += `, ${moveColor} is in check`;
-                }
-            }
-
-            $('#status').html(status);
-            $('#fenInput').val(game.fen());
-            $('#moveCount').text(game.history().length);
-            
-            const isCheck = game.in_check();
-            $('#checkStatus').text(isCheck ? 'YES' : 'NO')
-                .removeClass('text-slate-800 text-red-600')
-                .addClass(isCheck ? 'text-red-600' : 'text-slate-800');
-        }
-
-        // === CONTROLS ===
-        $('#fenInput').on('change', function() {
-            const val = $(this).val();
-            if (val === 'start') {
-                game.reset();
-            } else {
-                if (!game.load(val)) {
-                    alert("Invalid FEN!");
-                    return;
-                }
-            }
-            board.position(game.fen());
-            originalFen = game.fen();
-            updateStatus();
-            clearArrows();
-        });
-
-        function resetGame() {
-            game.reset();
-            board.position('start');
-            originalFen = game.fen();
-            updateStatus();
-            $('#userMove').val('');
-            $('#bestMove').val('');
-            $('#analysisResult').addClass('hidden');
-            $('#deepAnalysisSection').addClass('hidden');
-            clearArrows();
-        }
-
-        function loadPGN() {
-            const pgn = $('#pgnInput').val();
-            if (game.load_pgn(pgn)) {
-                board.position(game.fen());
-                originalFen = game.fen();
-                updateStatus();
-                alert("Game loaded successfully!");
-            } else {
-                alert("Invalid PGN format. Please check your input.");
-            }
-        }
-
-        // === CLOUD ANALYSIS (Lichess Free API) ===
-        async function cloudAnalyze(fen, multipv = 3) {
-            try {
-                // Use Lichess cloud evaluation API (free, no auth required)
-                const res = await fetch(`https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(fen)}&multiPv=${multipv}`, {
-                    method: 'GET',
-                    headers: {
-                        'Accept': 'application/json'
-                    }
-                });
-                
-                if (!res.ok) {
-                    throw new Error('Lichess API error');
-                }
-                
-                const data = await res.json();
-                
-                // If no cloud eval available, return empty (position not in cloud database)
-                if (!data.pvs || data.pvs.length === 0) {
-                    return await fallbackLocalAnalysis(fen, multipv);
-                }
-                
-                return data.pvs.map(pv => {
-                    const moves = pv.moves.split(' ');
-                    const temp = new Chess(fen);
-                    const sanMoves = moves.map(uci => {
-                        const move = temp.move(uci, { sloppy: true });
-                        return move ? move.san : uci;
-                    });
-                    
-                    // Convert centipawn score to pawns
-                    const evalScore = pv.cp ? (pv.cp / 100).toFixed(2) : (pv.mate ? `M${pv.mate}` : '0.00');
-                    
-                    return {
-                        pv: sanMoves,
-                        uci: moves,
-                        eval: evalScore,
-                        comment: pv.cp ? `Evaluation: ${evalScore}` : `Mate in ${Math.abs(pv.mate)}`
-                    };
-                });
-            } catch (e) {
-                console.error('Lichess cloud analysis error:', e);
-                // Fallback to basic analysis
-                return await fallbackLocalAnalysis(fen, multipv);
-            }
-        }
-
-        // === FALLBACK: Basic position evaluation ===
-        async function fallbackLocalAnalysis(fen, multipv = 3) {
-            // Simple material-based evaluation as fallback
-            const temp = new Chess(fen);
-            const legalMoves = temp.moves({ verbose: true });
-            
-            if (legalMoves.length === 0) {
-                return [];
-            }
-            
-            // Get top moves based on simple heuristics
-            const evaluatedMoves = legalMoves.map(move => {
-                const testGame = new Chess(fen);
-                testGame.move(move.san);
-                
-                // Simple evaluation: material + position
-                let score = 0;
-                
-                // Favor captures
-                if (move.captured) {
-                    score += PIECE_VALUES[move.captured] * 10;
-                }
-                
-                // Favor checks
-                if (testGame.in_check()) {
-                    score += 5;
-                }
-                
-                // Favor center control
-                if (['e4', 'e5', 'd4', 'd5'].includes(move.to)) {
-                    score += 2;
-                }
-                
-                // Material count
-                const material = calculateMaterial(testGame.fen());
-                score += material.diff;
-                
-                return {
-                    move: move,
-                    score: score,
-                    fen: testGame.fen()
-                };
-            });
-            
-            // Sort by score
-            evaluatedMoves.sort((a, b) => b.score - a.score);
-            
-            // Return top variations
-            return evaluatedMoves.slice(0, multipv).map((item, index) => {
-                const testGame = new Chess(fen);
-                testGame.move(item.move.san);
-                
-                // Get a few follow-up moves
-                const continuation = [item.move.san];
-                const uciMoves = [item.move.from + item.move.to + (item.move.promotion || '')];
-                
-                for (let i = 0; i < 2; i++) {
-                    const nextMoves = testGame.moves({ verbose: true });
-                    if (nextMoves.length > 0) {
-                        const nextMove = nextMoves[0];
-                        continuation.push(nextMove.san);
-                        uciMoves.push(nextMove.from + nextMove.to + (nextMove.promotion || ''));
-                        testGame.move(nextMove.san);
-                    }
-                }
-                
-                return {
-                    pv: continuation,
-                    uci: uciMoves,
-                    eval: (item.score / 10).toFixed(2),
-                    comment: `Local analysis (line ${index + 1})`
-                };
-            });
-        }
-
-        // === DEEP ANALYSIS ===
-        async function analyzeMove() {
-            const userSan = $('#userMove').val().trim();
-            
-            if (!userSan) {
-                alert('Please enter your move first (e.g., e4, Nf3, Qxh7)');
-                return;
-            }
-
-            // Validate user's move
-            const testGame = new Chess(originalFen);
-            const userMove = testGame.move(userSan, { sloppy: true });
-            
-            if (!userMove) {
-                alert('Invalid move! Please check the notation.');
-                return;
-            }
-
-            // UI Loading
-            const btn = $('#analyzeBtn');
-            btn.html('<i data-lucide="loader" class="w-5 h-5 animate-spin"></i> Analyzing...').prop('disabled', true);
-            if (typeof lucide !== 'undefined') {
-                lucide.createIcons();
-            }
-
-            try {
-                // Get best moves from original position
-                bestVariations = await cloudAnalyze(originalFen, 3);
-                
-                if (bestVariations.length === 0) {
-                    alert('Unable to analyze this position. Try a different position or check your connection.');
-                    return;
-                }
-
-                const originalEval = bestVariations[0].eval;
-                const bestMove = bestVariations[0].pv[0];
-                $('#bestMove').val(bestMove);
-
-                // Get opponent responses to user's move
-                yourVariations = await cloudAnalyze(testGame.fen(), 3);
-                const userEval = yourVariations[0]?.eval || 0;
-                
-                // Calculate evaluation change (handle mate scores)
-                const originalEvalNum = typeof originalEval === 'string' && originalEval.startsWith('M') ? 10 : parseFloat(originalEval);
-                const userEvalNum = typeof userEval === 'string' && userEval.startsWith('M') ? 10 : parseFloat(userEval);
-                const delta = Math.abs(originalEvalNum - userEvalNum);
-                
-                // Classify move
-                let moveType, headerClass, iconType;
-                if (delta < 0.3) {
-                    moveType = 'Excellent Move';
-                    headerClass = 'bg-green-100 text-green-800';
-                    iconType = 'check-circle';
-                } else if (delta < 0.8) {
-                    moveType = 'Good Move';
-                    headerClass = 'bg-blue-100 text-blue-800';
-                    iconType = 'check-circle';
-                } else if (delta < 1.5) {
-                    moveType = 'Inaccuracy';
-                    headerClass = 'bg-yellow-100 text-yellow-800';
-                    iconType = 'alert-circle';
-                } else if (delta < 3) {
-                    moveType = 'Mistake';
-                    headerClass = 'bg-orange-100 text-orange-800';
-                    iconType = 'x-circle';
-                } else {
-                    moveType = 'Blunder';
-                    headerClass = 'bg-red-100 text-red-800';
-                    iconType = 'x-circle';
-                }
-
-                // Show analysis result
-                $('#analysisResult').removeClass('hidden');
-                $('#analysisHeader').removeClass().addClass(`p-5 ${headerClass}`);
-                $('#analysisTitle').text(moveType);
-                $('#analysisIcon').attr('data-lucide', iconType);
-                $('#analysisStats').html(`
-                    <strong>Your move:</strong> ${userSan} &nbsp;|&nbsp; 
-                    <strong>Best:</strong> ${bestMove} &nbsp;|&nbsp; 
-                    <strong>Eval change:</strong> ${delta.toFixed(2)}
-                `);
-
-                // Generate explanation
-                if (delta < 0.8) {
-                    $('#analysisText').html(`Your move <strong>${userSan}</strong> is ${userSan === bestMove ? 'the best move' : 'a strong alternative'}! This maintains or improves your position.`);
-                    $('#analysisAdvice').text('Continue with solid play and look for tactical opportunities.');
-                } else {
-                    $('#analysisText').html(`The engine prefers <strong>${bestMove}</strong>. Your move <strong>${userSan}</strong> allows the opponent to gain an advantage. See the detailed analysis below to understand how.`);
-                    $('#analysisAdvice').text('Always check for Checks, Captures, and Threats (CCT) before moving.');
-                    
-                    // Add to mistakes
-                    addMistake(userSan, bestMove, moveType, delta.toFixed(2));
-                }
-
-                if (typeof lucide !== 'undefined') {
-                    lucide.createIcons();
-                }
-
-                // Draw arrow for best move
-                clearArrows();
-                if (bestVariations[0].uci[0]) {
-                    const uci = bestVariations[0].uci[0];
-                    drawArrow(uci.slice(0, 2), uci.slice(2, 4), 'green');
-                }
-
-                // Update eval display
-                const evalText = typeof originalEval === 'string' && originalEval.startsWith('M') ? originalEval : parseFloat(originalEval).toFixed(1);
-                $('#evalScore').text(evalText)
-                    .removeClass('text-green-600 text-red-600 text-slate-800')
-                    .addClass(originalEvalNum > 0 ? 'text-green-600' : originalEvalNum < 0 ? 'text-red-600' : 'text-slate-800');
-
-                // Setup deep analysis
-                if (delta >= 0.8) {
-                    setupDeepAnalysis();
-                }
-
-            } catch (error) {
-                alert('Analysis failed. Please check your internet connection.');
-                console.error(error);
-            } finally {
-                btn.html('<i data-lucide="target" class="w-5 h-5"></i> Deep Analysis').prop('disabled', false);
-                if (typeof lucide !== 'undefined') {
-                    lucide.createIcons();
-                }
-            }
-        }
-
-        // === DEEP ANALYSIS SETUP ===
-        function setupDeepAnalysis() {
-            $('#deepAnalysisSection').removeClass('hidden');
-            
-            currentMode = 'your';
-            currentVariation = 0;
-            currentStep = 0;
-            
-            // Populate variation selector
-            updateVariationSelector();
-            
-            // Initialize display
-            updateAnalysisDisplay();
-            
-            // Highlight mode button
-            $('#modeYourMove').removeClass('bg-red-600').addClass('bg-red-700');
-            $('#modeBestMove').removeClass('bg-green-700').addClass('bg-green-600');
-        }
-
-        function updateVariationSelector() {
-            const vars = currentMode === 'your' ? yourVariations : bestVariations;
-            const select = $('#variationSelect');
-            select.empty();
-            
-            vars.forEach((v, i) => {
-                const evalDisplay = typeof v.eval === 'string' ? v.eval : parseFloat(v.eval).toFixed(2);
-                const label = `Line ${i + 1}: ${v.pv[0]} (eval: ${evalDisplay})`;
-                select.append(`<option value="${i}">${label}</option>`);
-            });
-            
-            select.val(currentVariation);
-        }
-
-        function updateAnalysisDisplay() {
-            const vars = currentMode === 'your' ? yourVariations : bestVariations;
-            const variation = vars[currentVariation];
-            
-            if (!variation) return;
-
-            // Create analysis game
-            analysisGame = new Chess(originalFen);
-            
-            // If analyzing user's move, play it first
-            if (currentMode === 'your') {
-                const userSan = $('#userMove').val().trim();
-                analysisGame.move(userSan, { sloppy: true });
-            }
-
-            // Apply moves up to current step
-            for (let i = 0; i < currentStep; i++) {
-                analysisGame.move(variation.pv[i], { sloppy: true });
-            }
-
-            // Update board
-            board.position(analysisGame.fen());
-            clearArrows();
-
-            // Draw arrows for next move
-            if (currentStep < variation.pv.length) {
-                const nextUci = variation.uci[currentStep];
-                if (nextUci && nextUci.length >= 4) {
-                    drawArrow(nextUci.slice(0, 2), nextUci.slice(2, 4), 'green');
-                }
-                
-                // Highlight threats
-                highlightThreats(analysisGame);
-            }
-
-            // Update all displays
-            updateTimeline();
-            updateMoveExplanation();
-            updateTacticalAnalysis();
-            updateVariationSteps();
-        }
-
-        function highlightThreats(game) {
-            const moves = game.moves({ verbose: true });
-            const attacks = {};
-            
-            // Draw attack arrows
-            moves.forEach(move => {
-                if (move.captured) {
-                    const key = `${move.from}-${move.to}`;
-                    if (!attacks[key]) {
-                        drawArrow(move.from, move.to, 'red');
-                        attacks[key] = true;
-                    }
-                }
-            });
-        }
-
-        function updateTimeline() {
-            const vars = currentMode === 'your' ? yourVariations : bestVariations;
-            const variation = vars[currentVariation];
-            const timeline = $('#timeline');
-            timeline.empty();
-
-            // Add start position
-            timeline.append(createTimelineDot(0, 'Start', currentStep === 0));
-
-            // Add each move
-            for (let i = 0; i < variation.pv.length; i++) {
-                const isActive = (i + 1) === currentStep;
-                const moveNum = Math.floor(i / 2) + 1;
-                const label = `${moveNum}${i % 2 === 0 ? '.' : '...'}`;
-                timeline.append(createTimelineDot(i + 1, label, isActive));
-            }
-        }
-
-        function createTimelineDot(step, label, isActive) {
-            const bgColor = isActive ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-700';
-            const dot = $(`
-                <div class="timeline-dot ${bgColor} ${isActive ? 'active' : ''}" data-step="${step}">
-                    ${label}
-                </div>
-            `);
-            
-            dot.click(function() {
-                currentStep = step;
-                updateAnalysisDisplay();
-            });
-            
-            return dot;
-        }
-
-        function updateMoveExplanation() {
-            const vars = currentMode === 'your' ? yourVariations : bestVariations;
-            const variation = vars[currentVariation];
-            const container = $('#moveExplanation');
-            container.empty();
-
-            if (currentStep === 0) {
-                const intro = currentMode === 'your' 
-                    ? `<div class="bg-red-50 p-3 rounded text-sm"><strong>Starting Position After Your Move</strong><br>This shows how your opponent can punish your move.</div>`
-                    : `<div class="bg-green-50 p-3 rounded text-sm"><strong>Starting Position</strong><br>This shows the optimal continuation.</div>`;
-                container.append(intro);
-            } else {
-                const moveIndex = currentStep - 1;
-                const move = variation.pv[moveIndex];
-                const moveNum = Math.floor(moveIndex / 2) + 1;
-                const side = moveIndex % 2 === 0 ? 'White' : 'Black';
-                
-                const material = calculateMaterial(analysisGame.fen());
-                const commentary = generateMoveCommentary(analysisGame);
-                
-                container.append(`
-                    <div class="bg-gray-50 p-4 rounded-lg">
-                        <div class="font-bold text-lg mb-2">${moveNum}. ${move}</div>
-                        <div class="text-sm text-gray-600 mb-2">${side} to move</div>
-                        <div class="text-sm mb-2">${commentary}</div>
-                        <div class="text-xs text-gray-500">Material: ♔${material.white} vs ♚${material.black} (${material.diff > 0 ? '+' : ''}${material.diff})</div>
-                    </div>
-                `);
-            }
-
-            // End of variation message
-            if (currentStep === variation.pv.length) {
-                const finalMsg = currentMode === 'your'
-                    ? '<div class="bg-red-100 p-3 rounded text-sm font-bold">Position after opponent\'s punishment. The advantage is clear.</div>'
-                    : '<div class="bg-green-100 p-3 rounded text-sm font-bold">Optimal position reached. Strong play maintained.</div>';
-                container.append(finalMsg);
-            }
-        }
-
-        function updateTacticalAnalysis() {
-            const container = $('#tacticalAnalysis');
-            container.empty();
-
-            // Check status
-            if (analysisGame.in_check()) {
-                container.append('<div class="flex items-start gap-2 text-red-700"><i data-lucide="alert-triangle" class="w-4 h-4 mt-1"></i><span>King is in check!</span></div>');
-            }
-
-            // Attacked pieces
-            const threats = findThreats(analysisGame);
-            if (threats.length > 0) {
-                container.append(`<div class="font-bold text-sm mb-1">Pieces Under Attack:</div>`);
-                threats.forEach(threat => {
-                    container.append(`<div class="flex items-start gap-2 text-orange-700 text-sm"><span>• ${threat}</span></div>`);
-                });
-            }
-
-            // Material advantage
-            const material = calculateMaterial(analysisGame.fen());
-            if (Math.abs(material.diff) > 1) {
-                const color = material.diff > 0 ? 'text-green-700' : 'text-red-700';
-                container.append(`<div class="flex items-start gap-2 ${color} text-sm mt-2"><i data-lucide="trophy" class="w-4 h-4 mt-0.5"></i><span>Material advantage: ${Math.abs(material.diff)} points</span></div>`);
-            }
-
-            if (container.children().length === 0) {
-                container.append('<div class="text-gray-500 text-sm">No immediate tactical threats</div>');
-            }
-
-            if (typeof lucide !== 'undefined') {
-                lucide.createIcons();
-            }
-        }
-
-        function updateVariationSteps() {
-            const vars = currentMode === 'your' ? yourVariations : bestVariations;
-            const variation = vars[currentVariation];
-            const container = $('#variationSteps');
-            container.empty();
-
-            const tempGame = new Chess(originalFen);
-            
-            // Add user's move if in 'your' mode
-            if (currentMode === 'your') {
-                const userMove = $('#userMove').val().trim();
-                tempGame.move(userMove, { sloppy: true });
-                container.append(`
-                    <div class="variation-step p-3 rounded bg-red-50 border-l-4 border-red-400">
-                        <span class="font-bold">0. Your move: ${userMove}</span>
-                    </div>
-                `);
-            }
-
-            // Add all moves in variation
-            variation.pv.forEach((move, i) => {
-                const isActive = (i + 1) === currentStep;
-                const bgColor = isActive ? 'bg-blue-100 border-blue-500' : 'bg-gray-50 border-gray-200';
-                const moveNum = Math.floor(i / 2) + 1;
-                
-                tempGame.move(move, { sloppy: true });
-                const fen = tempGame.fen();
-                const material = calculateMaterial(fen);
-                
-                const step = $(`
-                    <div class="variation-step p-3 rounded ${bgColor} border-l-4 ${isActive ? 'active' : ''}" data-step="${i + 1}">
-                        <div class="flex justify-between items-center">
-                            <span class="font-bold">${moveNum}. ${move}</span>
-                            <span class="text-xs text-gray-600">Material: ${material.diff > 0 ? '+' : ''}${material.diff}</span>
-                        </div>
-                    </div>
-                `);
-                
-                step.click(function() {
-                    currentStep = i + 1;
-                    updateAnalysisDisplay();
-                });
-                
-                container.append(step);
-            });
-        }
-
-        // === HELPER FUNCTIONS ===
-        function calculateMaterial(fen) {
-            const temp = new Chess(fen);
-            const board = temp.board();
-            let white = 0, black = 0;
-
-            board.forEach(row => {
-                row.forEach(square => {
-                    if (square) {
-                        const value = PIECE_VALUES[square.type];
-                        if (square.color === 'w') {
-                            white += value;
-                        } else {
-                            black += value;
-                        }
-                    }
-                });
-            });
-
-            return { white, black, diff: white - black };
-        }
-
-        function findThreats(game) {
-            const threats = [];
-            const moves = game.moves({ verbose: true });
-            const attacked = {};
-
-            moves.forEach(move => {
-                if (move.captured) {
-                    const key = move.to;
-                    if (!attacked[key]) {
-                        threats.push(`${move.captured.toUpperCase()} on ${move.to}`);
-                        attacked[key] = true;
-                    }
-                }
-            });
-
-            return threats;
-        }
-
-        function generateMoveCommentary(game) {
-            const history = game.history({ verbose: true });
-            const lastMove = history[history.length - 1];
-            
-            if (!lastMove) return 'Position established.';
-            
-            const comments = [];
-            
-            if (lastMove.captured) {
-                const value = PIECE_VALUES[lastMove.captured];
-                comments.push(`Captures ${lastMove.captured.toUpperCase()} (worth ${value} points)`);
-            }
-            
-            if (game.in_check()) {
-                comments.push('Delivers check');
-            }
-            
-            if (lastMove.piece === 'q') {
-                comments.push('Queen activity');
-            } else if (lastMove.piece === 'r') {
-                comments.push('Rook development');
-            } else if (lastMove.piece === 'b' || lastMove.piece === 'n') {
-                comments.push('Minor piece development');
-            }
-            
-            return comments.length > 0 ? comments.join('. ') + '.' : 'Positional move.';
-        }
-
-        // === NAVIGATION FUNCTIONS ===
-        function switchAnalysisMode(mode) {
-            currentMode = mode;
-            currentVariation = 0;
-            currentStep = 0;
-            
-            if (mode === 'your') {
-                $('#modeYourMove').removeClass('bg-red-600').addClass('bg-red-700');
-                $('#modeBestMove').removeClass('bg-green-700').addClass('bg-green-600');
-            } else {
-                $('#modeBestMove').removeClass('bg-green-600').addClass('bg-green-700');
-                $('#modeYourMove').removeClass('bg-red-700').addClass('bg-red-600');
-            }
-            
-            updateVariationSelector();
-            updateAnalysisDisplay();
-        }
-
-        function changeVariation() {
-            currentVariation = parseInt($('#variationSelect').val());
-            currentStep = 0;
-            updateAnalysisDisplay();
-        }
-
-        function goToMove(direction) {
-            const vars = currentMode === 'your' ? yourVariations : bestVariations;
-            const variation = vars[currentVariation];
-            const maxStep = variation.pv.length;
-
-            switch (direction) {
-                case 'first':
-                    currentStep = 0;
-                    break;
-                case 'prev':
-                    if (currentStep > 0) currentStep--;
-                    break;
-                case 'next':
-                    if (currentStep < maxStep) currentStep++;
-                    break;
-                case 'last':
-                    currentStep = maxStep;
-                    break;
-            }
-
-            updateAnalysisDisplay();
-        }
-
-        function toggleAutoPlay() {
-            if (autoPlayInterval) {
-                clearInterval(autoPlayInterval);
-                autoPlayInterval = null;
-                $('#autoPlayBtn').html('<i data-lucide="play" class="w-4 h-4"></i> Auto Play');
-            } else {
-                $('#autoPlayBtn').html('<i data-lucide="pause" class="w-4 h-4"></i> Pause');
-                autoPlayInterval = setInterval(() => {
-                    const vars = currentMode === 'your' ? yourVariations : bestVariations;
-                    const variation = vars[currentVariation];
-                    
-                    if (currentStep < variation.pv.length) {
-                        currentStep++;
-                        updateAnalysisDisplay();
-                    } else {
-                        toggleAutoPlay();
-                    }
-                }, 1500);
-            }
-            if (typeof lucide !== 'undefined') {
-                lucide.createIcons();
-            }
-        }
-
-        // === MISTAKES TRACKING ===
-        function addMistake(user, best, type, delta) {
-            const container = $('#mistakesContainer');
-            const list = $('#mistakesList');
-            container.removeClass('hidden');
-            
-            const typeColors = {
-                'Blunder': 'text-red-600',
-                'Mistake': 'text-orange-600',
-                'Inaccuracy': 'text-yellow-600'
-            };
-            
-            const li = $(`
-                <li class="p-3 text-sm">
-                    <div class="flex justify-between items-center">
-                        <div>
-                            <span class="font-bold ${typeColors[type] || 'text-gray-600'}">${type}</span> • 
-                            You played <strong>${user}</strong>
-                        </div>
-                        <div class="text-gray-500">Best: <strong>${best}</strong> (Δ${delta})</div>
-                    </div>
-                </li>
-            `);
-            
-            list.prepend(li);
-            
-            // Keep only last 5
-            if (list.children().length > 5) {
-                list.children().last().remove();
-            }
-        }
-
-        // === MODE SWITCH ===
-        function setMode(mode) {
-            const btnAnalyze = $('#btn-analyze');
-            const btnQuiz = $('#btn-quiz');
-            
-            if (mode === 'analyze') {
-                btnAnalyze.removeClass('hover:bg-slate-800').addClass('bg-blue-600');
-                btnQuiz.removeClass('bg-blue-600').addClass('hover:bg-slate-800');
-                $('#bestMove').show();
-            } else {
-                btnQuiz.removeClass('hover:bg-slate-800').addClass('bg-blue-600');
-                btnAnalyze.removeClass('bg-blue-600').addClass('hover:bg-slate-800');
-                $('#bestMove').hide();
-                alert("Quiz Mode: Try to find the best move without hints!");
-            }
-        }
-    </script>
 </body>
 </html>
