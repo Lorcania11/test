@@ -1,1 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chess Cognition Trainer</title>
 
+<link rel="stylesheet" href="https://unpkg.com/chessboardjs@1.0.0/www/css/chessboard.css">
+<script src="https://unpkg.com/chess.js@1.0.0/chess.js"></script>
+<script src="https://unpkg.com/chessboardjs@1.0.0/www/js/chessboard.js"></script>
+
+<style>
+body {
+  background:#0c0c0c;
+  color:#eaeaea;
+  font-family:Arial;
+  display:flex;
+  gap:20px;
+  padding:20px;
+}
+#board { width:480px; }
+#panel { width:460px; }
+
+button {
+  background:#1976d2;
+  border:none;
+  color:white;
+  padding:8px;
+  margin:3px 0;
+  cursor:pointer;
+}
+button:hover { background:#125ea8; }
+
+.hidden { display:none; }
+
+#log {
+  background:#1a1a1a;
+  padding:10px;
+  max-height:220px;
+  overflow:auto;
+  font-size:13px;
+}
+
+.highlight {
+  box-shadow: inset 0 0 0 4px rgba(255,0,0,0.75);
+}
+.arrow {
+  position:absolute;
+  pointer-events:none;
+}
+</style>
+</head>
+
+<body>
+
+<div id="board"></div>
+
+<div id="panel">
+<h2>Chess Cognition Trainer</h2>
+
+<button onclick="newGame()">New Game</button>
+<button onclick="toggleBlindfold()">Toggle Blindfold</button>
+<button onclick="visualRecall()">Visualization Recall</button>
+<button onclick="showOpeningTree()">Opening Tree</button>
+
+<div id="log"></div>
+</div>
+
+<script>
+const game = new Chess();
+let blindfold = false;
+let journal = [];
+let evalBefore = 0;
+
+// OPENING TREE (EDITABLE)
+const openingTree = {
+  "e4": {
+    "e5": {
+      "Nf3": {
+        "Nc6": {
+          "Bc4": {}
+        }
+      }
+    }
+  }
+};
+
+const board = Chessboard("board", {
+  draggable:true,
+  position:"start",
+  onDrop:onDrop
+});
+
+// STOCKFISH
+const engine = new Worker("https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish.js");
+engine.postMessage("uci");
+
+function newGame() {
+  game.reset();
+  board.position("start");
+  journal = [];
+  log("New training game started.");
+}
+
+function toggleBlindfold() {
+  blindfold = !blindfold;
+  document.getElementById("board").classList.toggle("hidden");
+  log(blindfold ? "Blindfold mode ON" : "Blindfold mode OFF");
+}
+
+function onDrop(from, to) {
+  const move = game.move({from,to,promotion:'q'});
+  if (!move) return "snapback";
+
+  board.position(game.fen());
+  analyzeMove(move);
+  engineEval();
+}
+
+function engineEval() {
+  engine.postMessage("position fen " + game.fen());
+  engine.postMessage("go depth 12");
+}
+
+engine.onmessage = e => {
+  if (!e.data.includes("score")) return;
+  const score = parseInt(e.data.split("score cp ")[1] || 0);
+  classify(score);
+};
+
+function classify(score) {
+  const diff = score - evalBefore;
+  evalBefore = score;
+
+  let label = "Best";
+  if (diff < -30) label = "Inaccuracy";
+  if (diff < -80) label = "Mistake";
+  if (diff < -150) label = "Blunder";
+
+  journal.push({move:game.history().slice(-1)[0], label});
+  log(`Move ${game.history().length}: ${label}`);
+}
+
+function analyzeMove(move) {
+  if (move.flags.includes("c") || move.flags.includes("e")) {
+    log("Trade detected → evaluating material & initiative.");
+  }
+}
+
+function visualRecall() {
+  const fen = game.fen();
+  board.position("empty");
+  log("Reconstruct the current position mentally. Toggle blindfold OFF to check.");
+  setTimeout(()=>board.position(fen),4000);
+}
+
+function showOpeningTree() {
+  log("<b>Opening Tree:</b><br>" + JSON.stringify(openingTree, null, 2));
+}
+
+function log(text) {
+  const el = document.getElementById("log");
+  el.innerHTML += text + "<br>";
+  el.scrollTop = el.scrollHeight;
+}
+</script>
+
+</body>
+</html>
